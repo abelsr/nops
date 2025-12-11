@@ -21,7 +21,7 @@ class SpectralConvolution(nn.Module):
         out_channels (int): Number of output channels.
         modes (List[int]): List of modes for spectral convolution in each dimension.
         factorization (str, optional): Type of factorization to use ('dense', 'tucker', 'cp', 'tt').
-                                       Defaults to 'dense' (no factorization).
+                                       Defaults to 'tucker' (no factorization).
         rank (int, optional): Rank for low-rank factorization. Defaults to 16.
         bias (bool, optional): Whether to include a bias term in the layer. Defaults to True.
         **kwargs: Additional parameters.
@@ -259,6 +259,6 @@ class SpectralConvolution(nn.Module):
 
         # Add bias if present
         if self.bias is not None:
-            out = out + x
+            out = out + x + self.bias.view(1, -1, *([1] * self.dim))
 
         return out
