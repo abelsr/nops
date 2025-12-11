@@ -1,9 +1,12 @@
 [project]
-name = "neuraloperators"
+name = "nops"
 version = "0.1.0"
-description = "Add your description here"
+description = "nops: Neural Operators made simple"
 readme = "README.md"
 requires-python = ">=3.12"
+authors = [
+    {name = "Abel Santillan Rodriguez", email = "abelsantillanrdz@gmail.com"},
+]
 dependencies = [
     "lightning>=2.6.0",
     "loguru>=0.7.3",
