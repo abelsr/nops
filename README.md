@@ -1,5 +1,5 @@
 <div align="center">
-<img src="nops.png" alt="nops logo" width="200"/>
+    <img src="nops.png" alt="nops logo" width="200"/>
 </div>
 
 <div align="center">
@@ -52,13 +52,13 @@ graph LR
 
 ## ✨ Features
 
-*   **Human-Friendly API:** Intuitive classes and methods that make sense.
-*   **Multi-Dimensional:** Seamless support for 1D, 2D, and 3D FNO models.
-*   **Production Ready:** Built with modularity, type hinting, and efficiency in mind.
-*   **Batteries Included:**
-    *   **Attention Gating:** Advanced mechanisms to weight parallel Fourier branches.
-    *   **Flexible Gridding:** Automatic handling of grid coordinates.
-    *   **Padding Management:** Easy handling of boundary conditions.
+* **Human-Friendly API:** Intuitive classes and methods that make sense.
+* **Multi-Dimensional:** Seamless support for 1D, 2D, and 3D FNO models.
+* **Production Ready:** Built with modularity, type hinting, and efficiency in mind.
+* **Batteries Included:**
+* **Attention Gating:** Advanced mechanisms to weight parallel Fourier branches.
+* **Flexible Gridding:** Automatic handling of grid coordinates.
+* **Padding Management:** Easy handling of boundary conditions.
 
 ## 📦 Installation
 
@@ -114,11 +114,11 @@ print(f"Output Field Shape: {output.shape}")
 
 We welcome contributions! `nops` is a community-driven project to make neural operators accessible to everyone.
 
-1.  **Fork** the repository.
-2.  Create a **Feature Branch** (`git checkout -b feature/AmazingFeature`).
-3.  **Commit** your changes (`git commit -m 'Add some AmazingFeature'`).
-4.  **Push** to the branch (`git push origin feature/AmazingFeature`).
-5.  Open a **Pull Request**.
+1. **Fork** the repository.
+2. Create a **Feature Branch** (`git checkout -b feature/AmazingFeature`).
+3. **Commit** your changes (`git commit -m 'Add some AmazingFeature'`).
+4. **Push** to the branch (`git push origin feature/AmazingFeature`).
+5. Open a **Pull Request**.
 
 Please ensure your code follows the existing style and includes tests.
 
