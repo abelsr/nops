@@ -1,6 +1,8 @@
 <div align="center">
+<img src="nops.png" alt="nops logo" width="200"/>
+</div>
 
-# nops 🚀
+<div align="center">
 
 **Neural Operators made simple.**
 
