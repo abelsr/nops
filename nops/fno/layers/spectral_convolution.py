@@ -257,8 +257,9 @@ class SpectralConvolution(nn.Module):
         # Apply IFFT to return to spatial domain
         out = torch.fft.ifftn(out_ft, dim=tuple(range(-self.dim, 0)), s=sizes, norm='ortho').real
 
-        # Add bias if present
+        # Add learnable bias if present
         if self.bias is not None:
-            out = out + x + self.bias.view(1, -1, *([1] * self.dim))
+            bias = self.bias.view(1, -1, *([1] * self.dim))
+            out = out + bias
 
         return out
