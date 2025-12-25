@@ -73,8 +73,8 @@ class MoEBlock(nn.Module):
             # Select top-k experts per sample
             top_k_weights, top_k_indices = torch.topk(weights, self.top_k, dim=-1)  # [batch, top_k]
             
-            # Renormalize weights to sum to 1 (simple normalization, not softmax)
-            top_k_weights = top_k_weights / top_k_weights.sum(dim=-1, keepdim=True)
+            # Renormalize weights to sum to 1 (with epsilon for numerical stability)
+            top_k_weights = top_k_weights / (top_k_weights.sum(dim=-1, keepdim=True) + 1e-10)
             
             # Efficient batch processing: group samples by expert
             # Create a sparse representation to avoid running all experts
@@ -88,9 +88,7 @@ class MoEBlock(nn.Module):
                     continue  # Skip if no samples use this expert
                 
                 # Get the samples that use this expert
-                sample_indices = mask.nonzero(as_tuple=False).squeeze(1)  # Indices of samples using this expert
-                if sample_indices.dim() == 0:
-                    sample_indices = sample_indices.unsqueeze(0)
+                sample_indices = mask.nonzero(as_tuple=True)[0]  # 1D tensor of sample indices
                 
                 # Run expert on selected samples
                 x_subset = x[sample_indices]
@@ -99,9 +97,7 @@ class MoEBlock(nn.Module):
                 # Find weights for this expert in each sample
                 for i, sample_idx in enumerate(sample_indices):
                     # Find position of this expert in the top-k for this sample
-                    k_positions = (top_k_indices[sample_idx] == expert_idx).nonzero(as_tuple=False).squeeze(1)
-                    if k_positions.dim() == 0:
-                        k_positions = k_positions.unsqueeze(0)
+                    k_positions = (top_k_indices[sample_idx] == expert_idx).nonzero(as_tuple=True)[0]
                     
                     for k_pos in k_positions:
                         weight = top_k_weights[sample_idx, k_pos]
