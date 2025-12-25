@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Python
 __pycache__/
 *.py[cod]
@@ -49,3 +50,6 @@ Thumbs.db
 
 checkpoints
 lightning_logs
+=======
+__pycache__
+>>>>>>> 39608ed (Add VlasovPoissonDataModule and MoEFNOLitModule for data handling and model training)
