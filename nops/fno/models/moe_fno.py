@@ -26,6 +26,7 @@ class MoEFNO(nn.Module):
         activation: nn.Module = nn.GELU(),
         add_grid: bool = True,
         temperature: float = 1.0,
+        top_k: int = None,
         **kwargs: Any
     ):
         super().__init__()
@@ -40,6 +41,7 @@ class MoEFNO(nn.Module):
         self.projection_channels = projection_channels
         self.activation = activation
         self.add_grid = add_grid
+        self.top_k = top_k
         self.padding = kwargs.get('padding', None)
         
         # Grid setup
@@ -68,7 +70,8 @@ class MoEFNO(nn.Module):
                         activation=activation
                     ) for _ in range(num_experts)
                 ]),
-                router=Router(mid_channels, num_experts, temperature=temperature)
+                router=Router(mid_channels, num_experts, temperature=temperature),
+                top_k=top_k
             ) for _ in range(num_moe_layers)
         ])
 
