@@ -61,7 +61,6 @@ class MoEFNO(nn.Module):
         activation: nn.Module = nn.GELU(),
         add_grid: bool = True,
         temperature: float = 1.0,
-        top_k: int = None,
         **kwargs: Any
     ):
         super().__init__()
@@ -105,8 +104,7 @@ class MoEFNO(nn.Module):
                         activation=activation
                     ) for _ in range(num_experts)
                 ]),
-                router=Router(mid_channels, num_experts, temperature=temperature),
-                top_k=top_k
+                router=Router(mid_channels, num_experts, temperature=temperature)
             ) for _ in range(num_moe_layers)
         ])
 
@@ -158,7 +156,7 @@ class MoEFNO(nn.Module):
         if self.add_grid:
             if self.grids is None or self.grids.shape[0] != batch or list(self.grids.shape[1:-1]) != list(sizes):
                 self.set_grid(x)
-            x = torch.cat([x, self.grids], dim=-1)
+            x = torch.cat([x, self.grids], dim=-1) # type: ignore
 
         # Lifting
         x = self.lifting(x)
@@ -202,7 +200,9 @@ if __name__ == "__main__":
         out_channels=1,
         mid_channels=32,
         expert_hidden_size=32,
-        padding=[4, 4]
+        padding=[4, 4],
+        k=2,
+        routing_type='patch'
     )
     x = torch.randn(2, 1, 32, 32)
     y = model(x)
