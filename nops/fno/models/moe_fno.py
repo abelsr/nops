@@ -11,6 +11,41 @@ from nops.fno.layers.sequential_fno_block import SequentialFourierBlock
 class MoEFNO(nn.Module):
     """
     Mixture of Experts Fourier Neural Operator (MoE-FNO).
+    
+    This model combines Fourier Neural Operators with a Mixture of Experts architecture,
+    where multiple expert networks specialize on different aspects of the input.
+    
+    Args:
+        modes: List of Fourier modes for each spatial dimension
+        num_moe_layers: Number of MoE layers in the network
+        num_experts: Number of expert networks per MoE layer
+        in_channels: Number of input channels
+        lifting_channels: Hidden dimension for the lifting layer
+        projection_channels: Hidden dimension for the projection layer
+        out_channels: Number of output channels
+        mid_channels: Number of channels in the MoE layers
+        expert_hidden_size: Hidden dimension for expert networks
+        activation: Activation function (default: GELU)
+        add_grid: Whether to append coordinate grid to input (default: True)
+        temperature: Temperature parameter for router softmax (default: 1.0)
+        top_k: Number of top experts to use per sample. If None, uses all experts.
+               Using top_k < num_experts provides computational savings by only
+               running the most relevant experts for each input. (default: None)
+        **kwargs: Additional arguments (e.g., padding)
+    
+    Example:
+        >>> model = MoEFNO(
+        ...     modes=[16, 16],
+        ...     num_moe_layers=4,
+        ...     num_experts=8,
+        ...     in_channels=3,
+        ...     lifting_channels=64,
+        ...     projection_channels=64,
+        ...     out_channels=1,
+        ...     mid_channels=64,
+        ...     expert_hidden_size=64,
+        ...     top_k=2  # Only use top 2 experts per sample
+        ... )
     """
     def __init__(
         self,
@@ -155,7 +190,8 @@ class MoEFNO(nn.Module):
         return x
 
 if __name__ == "__main__":
-    # Test
+    # Test basic MoE-FNO
+    print("Testing MoE-FNO (all experts):")
     model = MoEFNO(
         modes=[8, 8],
         num_moe_layers=2,
@@ -170,6 +206,27 @@ if __name__ == "__main__":
     )
     x = torch.randn(2, 1, 32, 32)
     y = model(x)
-    print(f"Input shape: {x.shape}")
-    print(f"Output shape: {y.shape}")
+    print(f"  Input shape: {x.shape}")
+    print(f"  Output shape: {y.shape}")
     assert x.shape == y.shape
+    
+    # Test with Top-K optimization
+    print("\nTesting MoE-FNO with Top-K (top_k=2):")
+    model_topk = MoEFNO(
+        modes=[8, 8],
+        num_moe_layers=2,
+        num_experts=4,
+        in_channels=1,
+        lifting_channels=64,
+        projection_channels=64,
+        out_channels=1,
+        mid_channels=32,
+        expert_hidden_size=32,
+        padding=[4, 4],
+        top_k=2  # Only use top 2 experts
+    )
+    y_topk = model_topk(x)
+    print(f"  Input shape: {x.shape}")
+    print(f"  Output shape: {y_topk.shape}")
+    assert x.shape == y_topk.shape
+    print("\nAll tests passed!")
