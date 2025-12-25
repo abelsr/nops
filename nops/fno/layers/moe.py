@@ -73,24 +73,39 @@ class MoEBlock(nn.Module):
             # Select top-k experts per sample
             top_k_weights, top_k_indices = torch.topk(weights, self.top_k, dim=-1)  # [batch, top_k]
             
-            # Renormalize weights to sum to 1
-            top_k_weights = F.softmax(top_k_weights, dim=-1)
+            # Renormalize weights to sum to 1 (simple normalization, not softmax)
+            top_k_weights = top_k_weights / top_k_weights.sum(dim=-1, keepdim=True)
             
-            # Run only top-k experts
-            # Create output tensor with same shape as input
+            # Efficient batch processing: group samples by expert
+            # Create a sparse representation to avoid running all experts
             output = torch.zeros_like(x)
             
-            # For each batch sample, run only the selected experts
-            for b in range(batch_size):
-                for k_idx in range(self.top_k):
-                    expert_idx = top_k_indices[b, k_idx].item()
-                    expert_weight = top_k_weights[b, k_idx]
+            # Process each expert once with all samples that need it
+            for expert_idx in range(self.num_experts):
+                # Find which samples use this expert
+                mask = (top_k_indices == expert_idx).any(dim=-1)  # [batch]
+                if not mask.any():
+                    continue  # Skip if no samples use this expert
+                
+                # Get the samples that use this expert
+                sample_indices = mask.nonzero(as_tuple=False).squeeze(1)  # Indices of samples using this expert
+                if sample_indices.dim() == 0:
+                    sample_indices = sample_indices.unsqueeze(0)
+                
+                # Run expert on selected samples
+                x_subset = x[sample_indices]
+                expert_output = self.experts[expert_idx](x_subset)
+                
+                # Find weights for this expert in each sample
+                for i, sample_idx in enumerate(sample_indices):
+                    # Find position of this expert in the top-k for this sample
+                    k_positions = (top_k_indices[sample_idx] == expert_idx).nonzero(as_tuple=False).squeeze(1)
+                    if k_positions.dim() == 0:
+                        k_positions = k_positions.unsqueeze(0)
                     
-                    # Run the expert on this sample
-                    expert_output = self.experts[expert_idx](x[b:b+1])
-                    
-                    # Add weighted contribution
-                    output[b:b+1] += expert_weight * expert_output
+                    for k_pos in k_positions:
+                        weight = top_k_weights[sample_idx, k_pos]
+                        output[sample_idx] += weight * expert_output[i]
         else:
             # Run all experts (original behavior)
             expert_outputs = [expert(x) for expert in self.experts]
