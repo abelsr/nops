@@ -1,0 +1,60 @@
+<<<<<<< HEAD
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+
+
+checkpoints
+lightning_logs
+=======
+__pycache__
+>>>>>>> 39608ed (Add VlasovPoissonDataModule and MoEFNOLitModule for data handling and model training)
+
+__pycache__/
+*.pyc
+*logs/
+checkpoints/
