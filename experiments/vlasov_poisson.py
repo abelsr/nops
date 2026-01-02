@@ -174,9 +174,9 @@ def main():
     )
     
     model = MoEFNOLitModule(
-        modes=[16, 16, 16],
+        modes=[32, 32, 32],
         num_moe_layers=4,
-        num_experts=8,
+        num_experts=4,
         in_channels=3,
         out_channels=1,
         mid_channels=32,
@@ -186,14 +186,14 @@ def main():
     )
     
     trainer = L.Trainer(
-        max_epochs=500,
+        max_epochs=1000,
         accelerator="gpu",
         strategy='ddp_find_unused_parameters_true',
         devices=[0,1,2],
         callbacks=[VisualizationCallback(num_samples=3, slice_idx=32)],
         logger=[TensorBoardLogger("lightning_logs", name="vlasov_poisson_moefno")],
         accumulate_grad_batches=2,
-        # precision="16-mixed"
+        # precision='16'
     )
     
     trainer.fit(model, dm)
