@@ -117,6 +117,9 @@ class MoEBlock(nn.Module):
                     
                     # Sum weights for this expert across the k dimension (in case it's selected multiple times, 
                     # though top-k usually ensures unique indices)
+                    # 
+                    # Convert to same dtype as x to avoid type mismatch
+                    weights = weights.to(x.dtype)
                     spatial_weights.masked_scatter_(mask.any(dim=-1), weights[mask])
                     
                     # Multiply expert output by spatial weights
