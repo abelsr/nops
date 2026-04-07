@@ -200,7 +200,8 @@ def train():
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()
-                scheduler.step()
+                if global_step < total_steps - 1:
+                    scheduler.step()
                 global_step += 1
 
         # ── Validación al final de cada época ────────────────────────────────
