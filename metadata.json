@@ -1,0 +1,31 @@
+{
+  "a_shape": [
+    2048,
+    64,
+    64
+  ],
+  "batch_size": 128,
+  "created_at": "2026-01-11T23:46:27.604075+00:00",
+  "delta_t": 0.0001,
+  "device": "cuda",
+  "duration_seconds": 1690.758419,
+  "forcing": "none",
+  "forcing_amplitude": 1.0,
+  "format": "pt",
+  "num_samples": 2048,
+  "output": "navier_stokes_20_t.pt",
+  "record_steps": 20,
+  "resolution": 64,
+  "seed": null,
+  "t_final": 10.0,
+  "t_shape": [
+    20
+  ],
+  "u_shape": [
+    2048,
+    64,
+    64,
+    20
+  ],
+  "visc": 0.001
+}

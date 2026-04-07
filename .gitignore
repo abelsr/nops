@@ -58,3 +58,6 @@ checkpoints/
 
 # Data files
 *.npy
+
+# Pytorch files
+*.pt
