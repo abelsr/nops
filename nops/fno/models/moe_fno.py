@@ -61,6 +61,7 @@ class MoEFNO(nn.Module):
         activation: nn.Module = nn.GELU(),
         add_grid: bool = True,
         temperature: float = 1.0,
+        top_k: int | None = 2,
         **kwargs: Any
     ):
         super().__init__()

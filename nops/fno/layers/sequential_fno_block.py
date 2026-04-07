@@ -1,8 +1,10 @@
+from typing import List, Optional
+
 import torch
 import torch.nn as nn
-from typing import List, Optional
-from .spectral_convolution import SpectralConvolution
+
 from .mlp import MLP
+from .spectral_convolution import SpectralConvolution
 
 class SequentialFourierBlock(nn.Module):
     """
@@ -22,7 +24,7 @@ class SequentialFourierBlock(nn.Module):
         self.dim = len(modes)
         
         # 1. Spectral Convolution
-        self.fourier = SpectralConvolution(in_channels, out_channels, modes, factorization='dense')
+        self.fourier = SpectralConvolution(in_channels, out_channels, modes, factorization='dense', rank=16)
         
         # 2. MLP (Point-wise)
         self.mlp = MLP(self.dim, out_channels, out_channels, hidden_size, activation)

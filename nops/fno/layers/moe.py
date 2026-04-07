@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import List, Tuple, Optional
+from typing import Tuple, Optional
 
 class Router(nn.Module):
     """
@@ -96,6 +96,10 @@ class MoEBlock(nn.Module):
                     w = weights[batch_idx, k_idx]
                     for _ in range(expert_output.dim() - 1):
                         w = w.unsqueeze(-1)
+                    
+                    # Ensure same dtype for addition
+                    expert_output = expert_output.to(output.dtype)
+                    w = w.to(output.dtype)
                     
                     output.index_add_(0, batch_idx, expert_output * w)
         
