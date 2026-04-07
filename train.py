@@ -134,16 +134,15 @@ def build_model() -> nn.Module:
 
 def build_scheduler(optimizer, total_steps: int):
     """
-    Warmup lineal durante WARMUP_STEPS pasos,
-    luego cosine annealing hasta total_steps.
+    OneCycleLR scheduler: fast warmup then cosine annealing.
     """
-    def lr_lambda(step: int) -> float:
-        if step < WARMUP_STEPS:
-            return (step + 1) / max(WARMUP_STEPS, 1)
-        progress = (step - WARMUP_STEPS) / max(total_steps - WARMUP_STEPS, 1)
-        return 0.5 * (1.0 + math.cos(math.pi * progress))
-
-    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    return torch.optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=LR * 3,
+        total_steps=total_steps,
+        pct_start=0.3,  # 30% warmup
+        anneal_strategy='cos'
+    )
 
 
 # =============================================================================
@@ -154,8 +153,8 @@ def train():
     train_loader, val_loader = get_dataloaders(batch_size=BATCH_SIZE)
 
     model     = build_model()
-    optimizer = torch.optim.AdamW(
-        model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY, foreach=True
     )
     scaler = GradScaler()
 
