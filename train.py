@@ -42,16 +42,16 @@ torch.set_float32_matmul_precision("medium")
 BATCH_SIZE = 16          # batch por GPU
 ACCUM_STEPS = 4          # gradient accumulation → batch efectivo = BATCH_SIZE * ACCUM_STEPS
 
-# Arquitectura  (FNO 3D: x, y, t)
-MODES      = [16, 16, 8]   # modos de Fourier por dimensión [x, y, t]
+# Arquitectura  (FNO 2D: x, y) - temporal dimension handled as channels
+MODES      = [16, 16]      # modos de Fourier por dimensión [x, y] - 2D spatial only
 N_LAYERS   = 4             # número de Fourier/MoE layers
-MID_CH     = 64            # canales intermedios (width del modelo)
+MID_CH     = 128           # canales intermedios (width del modelo) - Increased from 64
 LIFT_CH    = 128           # canales de lifting
 PROJ_CH    = 128           # canales de projection
 ADD_GRID   = True          # agregar coordenadas espaciales al input
 
 # Si usas MoEFNO
-USE_MOE        = True
+USE_MOE        = False
 N_EXPERTS      = 3
 EXPERT_HIDDEN  = 32
 TOP_K          = 2
