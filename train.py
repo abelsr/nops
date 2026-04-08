@@ -43,7 +43,7 @@ BATCH_SIZE = 32
 ACCUM_STEPS = 2
 
 # Arquitectura  (FNO 2D: x, y) - temporal dimension handled as channels
-MODES = [12, 12]
+MODES = [8, 8]
 N_LAYERS = 4  # número de Fourier/MoE layers
 MID_CH = 64
 LIFT_CH = 64
