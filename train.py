@@ -63,7 +63,7 @@ WEIGHT_DECAY = 1e-4
 CLIP_GRAD = 1.0
 
 WARMUP_STEPS = 200
-H1_WEIGHT = 0.05
+H1_WEIGHT = 0.08
 
 # =============================================================================
 # LOSS — relative L2 (estándar en literatura de Neural Operators)
