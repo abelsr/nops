@@ -44,7 +44,7 @@ ACCUM_STEPS = 2
 
 # Arquitectura  (FNO 2D: x, y) - temporal dimension handled as channels
 MODES = [8, 8]
-N_LAYERS = 4  # número de Fourier/MoE layers
+N_LAYERS = 6
 MID_CH = 64
 LIFT_CH = 64
 PROJ_CH = 64
