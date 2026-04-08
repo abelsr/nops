@@ -45,9 +45,9 @@ ACCUM_STEPS = 4  # gradient accumulation → batch efectivo = BATCH_SIZE * ACCUM
 # Arquitectura  (FNO 2D: x, y) - temporal dimension handled as channels
 MODES = [16, 16]  # modos de Fourier por dimensión [x, y] - 2D spatial only
 N_LAYERS = 4  # número de Fourier/MoE layers
-MID_CH = 128  # canales intermedios (width del modelo) - Increased from 64
-LIFT_CH = 128  # canales de lifting
-PROJ_CH = 128  # canales de projection
+MID_CH = 64
+LIFT_CH = 64
+PROJ_CH = 64
 ADD_GRID = True  # agregar coordenadas espaciales al input
 
 # Si usas MoEFNO
@@ -58,7 +58,7 @@ TOP_K = 2
 ROUTING_TYPE = "patch"  # "patch" | "sample"
 
 # Optimizador
-LR = 1e-3
+LR = 5e-3
 WEIGHT_DECAY = 1e-4
 CLIP_GRAD = 1.0
 
@@ -137,15 +137,13 @@ def build_model() -> nn.Module:
 
 
 def build_scheduler(optimizer, total_steps: int):
-    warmup_steps = min(WARMUP_STEPS, total_steps // 5)
-
-    def lr_lambda(step):
-        if step < warmup_steps:
-            return step / max(warmup_steps, 1)
-        progress = (step - warmup_steps) / max(total_steps - warmup_steps, 1)
-        return 0.5 * (1 + math.cos(math.pi * progress))
-
-    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    return torch.optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=LR,
+        total_steps=total_steps,
+        pct_start=0.1,
+        anneal_strategy="cos",
+    )
 
 
 # =============================================================================
@@ -157,7 +155,7 @@ def train():
     train_loader, val_loader = get_dataloaders(batch_size=BATCH_SIZE)
 
     model = build_model()
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
         model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY, foreach=True
     )
     scaler = GradScaler("cuda")
@@ -165,7 +163,8 @@ def train():
     # Estimación de steps totales para el scheduler
     # (heurística: asumimos ~3 épocas completas en el budget)
     steps_per_epoch = len(train_loader) // ACCUM_STEPS
-    estimated_epochs = max(1, TIME_BUDGET // (steps_per_epoch * 2 + 1))
+    estimated_epoch_seconds = 12
+    estimated_epochs = max(1, TIME_BUDGET // estimated_epoch_seconds)
     total_steps = steps_per_epoch * estimated_epochs
     scheduler = build_scheduler(optimizer, total_steps)
 
