@@ -43,7 +43,7 @@ BATCH_SIZE = 16  # batch por GPU
 ACCUM_STEPS = 4  # gradient accumulation → batch efectivo = BATCH_SIZE * ACCUM_STEPS
 
 # Arquitectura  (FNO 2D: x, y) - temporal dimension handled as channels
-MODES = [16, 16]  # modos de Fourier por dimensión [x, y] - 2D spatial only
+MODES = [12, 12]
 N_LAYERS = 4  # número de Fourier/MoE layers
 MID_CH = 64
 LIFT_CH = 64
@@ -63,6 +63,7 @@ WEIGHT_DECAY = 1e-4
 CLIP_GRAD = 1.0
 
 WARMUP_STEPS = 200
+H1_WEIGHT = 0.1
 
 # =============================================================================
 # LOSS — relative L2 (estándar en literatura de Neural Operators)
@@ -70,15 +71,21 @@ WARMUP_STEPS = 200
 
 
 def rel_l2_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """
-    Relative L2 loss por muestra, promediada sobre el batch.
-    pred, target: [B, C, *sizes]
-    """
     diff = pred - target
     b = diff.shape[0]
     num = torch.norm(diff.reshape(b, -1), dim=1)
     denom = torch.norm(target.reshape(b, -1), dim=1).clamp(min=1e-8)
-    return (num / denom).mean()
+    l2 = (num / denom).mean()
+    if H1_WEIGHT > 0:
+        grad_pred = torch.gradient(pred, dim=(-2, -1))
+        grad_tgt = torch.gradient(target, dim=(-2, -1))
+        h1 = sum(
+            torch.norm((gp - gt).reshape(b, -1), dim=1)
+            / torch.norm(gt.reshape(b, -1), dim=1).clamp(min=1e-8)
+            for gp, gt in zip(grad_pred, grad_tgt)
+        ).mean()
+        return l2 + H1_WEIGHT * h1
+    return l2
 
 
 # =============================================================================
