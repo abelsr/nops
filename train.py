@@ -58,7 +58,7 @@ TOP_K = 2
 ROUTING_TYPE = "patch"  # "patch" | "sample"
 
 # Optimizador
-LR = 5e-3
+LR = 8e-3
 WEIGHT_DECAY = 1e-4
 CLIP_GRAD = 1.0
 
@@ -170,7 +170,7 @@ def train():
     # Estimación de steps totales para el scheduler
     # (heurística: asumimos ~3 épocas completas en el budget)
     steps_per_epoch = len(train_loader) // ACCUM_STEPS
-    estimated_epoch_seconds = 12
+    estimated_epoch_seconds = 11
     estimated_epochs = max(1, TIME_BUDGET // estimated_epoch_seconds)
     total_steps = steps_per_epoch * estimated_epochs
     scheduler = build_scheduler(optimizer, total_steps)
