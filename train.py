@@ -39,8 +39,8 @@ torch.set_float32_matmul_precision("medium")
 # =============================================================================
 
 # Datos
-BATCH_SIZE = 16  # batch por GPU
-ACCUM_STEPS = 4  # gradient accumulation → batch efectivo = BATCH_SIZE * ACCUM_STEPS
+BATCH_SIZE = 32
+ACCUM_STEPS = 2
 
 # Arquitectura  (FNO 2D: x, y) - temporal dimension handled as channels
 MODES = [12, 12]
