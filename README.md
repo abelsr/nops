@@ -105,7 +105,7 @@ print(f"Output Field Shape: {output.shape}")
 ## 🗺️ Roadmap
 
 - [x] **FNO (Fourier Neural Operator):** Original implementation with attention extensions.
-- [ ] **DeepONet:** Implementation of Deep Operator Networks.
+- [x] **DeepONet:** Implementation of Deep Operator Networks.
 - [ ] **GNO (Graph Neural Operator):** Support for irregular meshes.
 - [ ] **Physics-Informed Losses:** Built-in loss functions for PDE constraints.
 - [ ] **Data Loaders:** Standard datasets (Burgers, Navier-Stokes, Darcy Flow).
