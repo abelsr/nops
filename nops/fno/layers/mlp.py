@@ -1,8 +1,16 @@
 import torch
 import torch.nn as nn
 
+
 class MLP(nn.Module):
-    def __init__(self, dim: int, in_channels: int, out_channels: int, mid_channels: int, activation: nn.Module = nn.GELU()):
+    def __init__(
+        self,
+        dim: int,
+        in_channels: int,
+        out_channels: int,
+        mid_channels: int,
+        activation: nn.Module = nn.GELU(),
+    ):
         """
         Multi-Layer Perceptron (MLP) module.
 
@@ -11,7 +19,7 @@ class MLP(nn.Module):
             in_channels (int): Number of input channels.
             out_channels (int): Number of output channels.
             mid_channels (int): Number of channels in the intermediate layer.
-            activation (torch.nn.Module, optional): Activation function to be applied after the first convolutional layer. 
+            activation (torch.nn.Module, optional): Activation function to be applied after the first convolutional layer.
                 Defaults to `torch.nn.GELU()`.
 
         """
