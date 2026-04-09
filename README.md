@@ -1,5 +1,5 @@
 <div align="center">
-    <img src="nops.png" alt="nops logo" width="200"/>
+    <img src="https://github.com/abelsr/nops/blob/main/nops.png?raw=true" alt="nops logo" width="200"/>
 </div>
 
 <div align="center">
