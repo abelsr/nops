@@ -39,7 +39,6 @@ graph LR
         FourierLayers --> Projection["Projection Layer<br/>(Q)"]
         Projection --> Output["Output<br/>(Batch, C_out, X, Y...)"]
     end
-
 ```
 
 *A human-centric interface for operating with Neural Operators (FNO, GNO, DeepONet, etc.).*
@@ -107,7 +106,7 @@ print(f"Output Field Shape: {output.shape}")
 - [x] **FNO (Fourier Neural Operator):** Original implementation with attention extensions.
 - [x] **DeepONet:** Implementation of Deep Operator Networks.
 - [x] **GNO (Graph Neural Operator):** Support for irregular meshes.
-- [ ] **Physics-Informed Losses:** Built-in loss functions for PDE constraints.
+- [x] **Physics-Informed Losses:** Built-in loss functions for PDE constraints.
 - [ ] **Data Loaders:** Standard datasets (Burgers, Navier-Stokes, Darcy Flow).
 
 ## 🤝 Contributing

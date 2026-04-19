@@ -4,28 +4,39 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nops"
-version = "0.1.1-alpha"
-description = "nops: Neural Operators made simple"
+version = "0.2.0"
+description = "nops: Neural Operators made simple — with physics-informed losses for FNO, DeepONet, and GNO"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [
     {name = "Abel Santillan Rodriguez", email = "abelsantillanrdz@gmail.com"},
 ]
+keywords = [
+    "neural operators",
+    "physics-informed",
+    "scientific machine learning",
+    "PDE",
+    "FNO",
+    "DeepONet",
+    "GNO",
+    "Fourier Neural Operator",
+    "deep learning",
+    "partial differential equations",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
+    "Intended Audience :: Education",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Typing :: Typed",
 ]
-urls.Homepage = "https://github.com/yourusername/nops"
-urls.Repository = "https://github.com/yourusername/nops"
-urls.Documentation = "https://github.com/yourusername/nops/blob/main/README.md"
-
 dependencies = [
     "lightning>=2.6.0",
     "loguru>=0.7.3",
@@ -37,6 +48,13 @@ dependencies = [
     "torch>=2.9.1",
     "torchvision>=0.24.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/abelsr/nops"
+Repository = "https://github.com/abelsr/nops"
+Documentation = "https://github.com/abelsr/nops/blob/main/README.md"
+"Bug Tracker" = "https://github.com/abelsr/nops/issues"
+Changelog = "https://github.com/abelsr/nops/releases"
 
 [dependency-groups]
 dev = [
