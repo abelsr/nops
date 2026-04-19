@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nops"
-version = "0.2.0"
+version = "0.3.0"
 description = "nops: Neural Operators made simple — with physics-informed losses for FNO, DeepONet, and GNO"
 readme = "README.md"
 requires-python = ">=3.12"
