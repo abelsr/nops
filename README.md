@@ -107,7 +107,7 @@ print(f"Output Field Shape: {output.shape}")
 - [x] **DeepONet:** Implementation of Deep Operator Networks.
 - [x] **GNO (Graph Neural Operator):** Support for irregular meshes.
 - [x] **Physics-Informed Losses:** Built-in loss functions for PDE constraints.
-- [ ] **Data Loaders:** Standard datasets (Burgers, Navier-Stokes, Darcy Flow).
+- [x] **Data Loaders:** Standard datasets (Burgers, Navier-Stokes, Darcy Flow).
 
 ## 🤝 Contributing
 
