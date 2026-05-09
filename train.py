@@ -58,7 +58,7 @@ TOP_K = 2
 ROUTING_TYPE = "patch"  # "patch" | "sample"
 
 # Optimizador
-LR = 8e-3
+LR           = 3e-3  # further increased LR
 WEIGHT_DECAY = 1e-4
 CLIP_GRAD = 1.0
 
