@@ -78,8 +78,11 @@ def radius_graph(
 
     # Build edges
     if max_num_neighbors > 0:
-        # Use topk per node to get at most max_num_neighbors closest neighbors
-        k = min(max_num_neighbors, max(N - 1, 1))
+        # Use topk per node to get at most max_num_neighbors closest neighbors.
+        # When self-loops are allowed, a node may select itself, so up to N
+        # neighbors are possible. Otherwise the maximum is N - 1.
+        max_possible_neighbors = N if loop else max(N - 1, 1)
+        k = min(max_num_neighbors, max_possible_neighbors)
         weights, indices = torch.topk(dist_masked, k, dim=1, largest=False)
 
         # Keep only neighbors within radius (filter out inf entries)
