@@ -40,7 +40,7 @@ def radius_graph(
         if batch is None:
             batch = torch.zeros(n_points, dtype=torch.long, device=pos.device)
         else:
-            batch = batch.unsqueeze(0)  # [1, n_points]
+            batch = batch.reshape(-1)
     elif pos.dim() == 3:  # [batch_size, n_points, pos_dim]
         batch_size, n_points, pos_dim = pos.shape
         if batch is None:
@@ -60,7 +60,7 @@ def radius_graph(
     # Flatten positions for easier computation
     # pos_flat: [batch_size * n_points, pos_dim]
     pos_flat = pos.view(-1, pos_dim)
-    batch_flat = batch  # [batch_size * n_points]
+    batch_flat = batch.reshape(-1)  # [batch_size * n_points]
 
     # Compute pairwise distance matrix using cdist
     N = pos_flat.size(0)
