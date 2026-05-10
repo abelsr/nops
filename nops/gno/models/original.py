@@ -139,7 +139,13 @@ class GNO(nn.Module):
             return radius_graph(
                 pos,
                 r=self.radius,
-                max_num_neighbors=self.max_num_neighbors or self.k_neighbors or 32,
+                max_num_neighbors=(
+                    self.max_num_neighbors
+                    if self.max_num_neighbors is not None
+                    else self.k_neighbors
+                    if self.k_neighbors is not None
+                    else 32
+                ),
             )
         elif self.neighbor_strategy == "knn":
             edge_index = knn_graph(pos, k=self.k_neighbors or 8)
