@@ -159,6 +159,16 @@ class TestNeighborSearch:
         # May be empty if no neighbors within radius
         assert edge_weights is not None
 
+    def test_radius_graph_with_1d_batch_on_2d_pos(self):
+        """Test radius graph with 1D batch labels and 2D positions."""
+        pos = torch.rand(6, 2)
+        batch = torch.tensor([0, 0, 0, 1, 1, 1], dtype=torch.long)
+
+        edge_index, _ = radius_graph(pos, r=2.0, batch=batch, max_num_neighbors=3)
+
+        assert edge_index.shape[0] == 2
+        assert torch.all(batch[edge_index[0]] == batch[edge_index[1]])
+
 
 class TestIntegralTransform:
     """Tests for IntegralTransform layer."""

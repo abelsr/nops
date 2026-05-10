@@ -2,14 +2,12 @@
 Graph Neural Operator (GNO) model for learning operators on irregular meshes.
 """
 
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from nops.gno.layers.gno_block import GNOBlock
-from nops.gno.layers.mlp import MLP
 from nops.gno.layers.neighbor_search import radius_graph, knn_graph
 
 
@@ -31,7 +29,7 @@ class GNO(nn.Module):
         activation (nn.Module): Activation function. Default: nn.GELU().
         radius (float, optional): Radius for neighbor search. Default: 0.1.
         k_neighbors (int, optional): Number of neighbors for KNN graph.
-                                     If None, uses radius-based graph.
+        max_num_neighbors (int, optional): Max neighbors per node for radius graph.
         neighbor_strategy (str): Strategy for building graph ('radius' or 'knn').
         add_grid (bool): Whether to append grid coordinates to input.
         skip (str): Type of skip connection ('skip', 'proj', or None).
@@ -53,6 +51,7 @@ class GNO(nn.Module):
         add_grid: bool = True,
         skip: str = "skip",
         dropout: float = 0.0,
+        max_num_neighbors: Optional[int] = None,
         **kwargs: Any,
     ):
         super().__init__()
@@ -70,6 +69,7 @@ class GNO(nn.Module):
         self.add_grid = add_grid
         self.skip = skip
         self.dropout = dropout
+        self.max_num_neighbors = max_num_neighbors
 
         # Determine effective input channels
         effective_in_channels = in_channels + (
@@ -137,7 +137,15 @@ class GNO(nn.Module):
         """
         if self.neighbor_strategy == "radius":
             return radius_graph(
-                pos, r=self.radius, max_num_neighbors=self.k_neighbors or 32
+                pos,
+                r=self.radius,
+                max_num_neighbors=(
+                    self.max_num_neighbors
+                    if self.max_num_neighbors is not None
+                    else self.k_neighbors
+                    if self.k_neighbors is not None
+                    else 32
+                ),
             )
         elif self.neighbor_strategy == "knn":
             edge_index = knn_graph(pos, k=self.k_neighbors or 8)
