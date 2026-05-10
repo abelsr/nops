@@ -62,84 +62,43 @@ def radius_graph(
     pos_flat = pos.view(-1, pos_dim)
     batch_flat = batch  # [batch_size * n_points]
 
-    # Compute pairwise distances
-    # Using efficient matrix multiplication for squared distances
-    # ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 * <x_i, x_j>
-    pos_squared = torch.sum(pos_flat**2, dim=1, keepdim=True)  # [N, 1]
-    pos_dot = torch.matmul(pos_flat, pos_flat.t())  # [N, N]
-    dist_squared = pos_squared + pos_squared.t() - 2 * pos_dot  # [N, N]
+    # Compute pairwise distance matrix using cdist
+    N = pos_flat.size(0)
+    dist = torch.cdist(pos_flat, pos_flat)  # [N, N]
 
-    # Clamp to avoid negative values due to numerical instability
-    dist_squared = torch.clamp(dist_squared, min=0.0)
-    dist = torch.sqrt(dist_squared + 1e-12)  # [N, N]
+    # Mask distances: only keep same-batch pairs, set others to inf
+    dist_masked = torch.full((N, N), float("inf"), device=pos.device, dtype=pos.dtype)
+    batch_eq = batch_flat.unsqueeze(0) == batch_flat.unsqueeze(1)  # [N, N]
+    dist_masked = torch.where(batch_eq, dist, dist_masked)
 
-    # Build edges per batch item
-    edge_src_list = []
-    edge_dst_list = []
-    edge_dist_list = []
+    # Exclude self-loops if requested
+    if not loop:
+        self_mask = torch.eye(N, dtype=torch.bool, device=pos.device)
+        dist_masked = dist_masked.masked_fill(self_mask, float("inf"))
 
-    for b in range(batch_size):
-        # Get valid neighbors for each node in this batch
-        for i in range(n_points):
-            for j in range(n_points):
-                if i == j and not loop:
-                    continue
-                d = dist[b * n_points + i, b * n_points + j].item()
-                if d <= r:
-                    edge_src_list.append(b * n_points + i)
-                    edge_dst_list.append(b * n_points + j)
-                    edge_dist_list.append(d)
+    # Build edges
+    if max_num_neighbors > 0:
+        # Use topk per node to get at most max_num_neighbors closest neighbors
+        k = min(max_num_neighbors, max(N - 1, 1))
+        weights, indices = torch.topk(dist_masked, k, dim=1, largest=False)
 
-    if not edge_src_list:
+        # Keep only neighbors within radius (filter out inf entries)
+        valid = weights <= r
+        src = torch.arange(N, device=pos.device).unsqueeze(1).expand(-1, k)
+        src = src[valid]
+        dst = indices[valid]
+        edge_weights = weights[valid]
+    else:
+        # No limit: find all pairs within radius
+        src, dst = torch.where(dist_masked <= r)
+        edge_weights = dist_masked[src, dst]
+
+    if src.numel() == 0:
         edge_index = torch.empty((2, 0), dtype=torch.long, device=pos.device)
         edge_weights = torch.empty((0,), dtype=pos.dtype, device=pos.device)
         return edge_index, edge_weights
 
-    # Convert to tensors
-    edge_index = torch.tensor(
-        [edge_src_list, edge_dst_list], device=pos.device, dtype=torch.long
-    )
-    edge_weights = torch.tensor(edge_dist_list, device=pos.device, dtype=pos.dtype)
-
-    # Limit to max_num_neighbors per node
-    if max_num_neighbors > 0:
-        # For each source node, keep only the closest max_num_neighbors
-        unique_src, inverse_idx = torch.unique(edge_index[0], return_inverse=True)
-
-        filtered_src = []
-        filtered_dst = []
-        filtered_weights = []
-
-        for i, src in enumerate(unique_src):
-            mask = edge_index[0] == src
-            src_edges = edge_index[1][mask]
-            src_weights = edge_weights[mask]
-
-            if src_edges.shape[0] > max_num_neighbors:
-                # Keep k smallest
-                _, topk_idx = torch.topk(src_weights, max_num_neighbors, largest=False)
-                filtered_src.extend([src.item()] * max_num_neighbors)
-                filtered_dst.extend(src_edges[topk_idx].tolist())
-                filtered_weights.extend(src_weights[topk_idx].tolist())
-            else:
-                filtered_src.extend([src.item()] * src_edges.shape[0])
-                filtered_dst.extend(src_edges.tolist())
-                filtered_weights.extend(src_weights.tolist())
-
-        edge_index = torch.tensor(
-            [filtered_src, filtered_dst], device=pos.device, dtype=torch.long
-        )
-        edge_weights = torch.tensor(
-            filtered_weights, device=pos.device, dtype=pos.dtype
-        )
-
-    return edge_index, edge_weights
-
-    # Convert to tensors
-    edge_index = torch.tensor(valid_connections, device=pos.device).t()  # [2, n_edges]
-    edge_weights = torch.tensor(
-        [c[2] for c in valid_connections], device=pos.device, dtype=pos.dtype
-    )  # [n_edges]
+    edge_index = torch.stack([src, dst], dim=0)  # [2, n_edges]
 
     return edge_index, edge_weights
 
