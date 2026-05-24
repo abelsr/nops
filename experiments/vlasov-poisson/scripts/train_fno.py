@@ -1,4 +1,5 @@
 import torch
+from datetime import datetime
 from torch.utils.data import DataLoader
 
 from .config import get_args, get_paths
@@ -13,6 +14,7 @@ from .trainer import (
     plot_miguel_comparison,
     save_metrics,
 )
+from .mlflow_utils import setup_mlflow
 
 
 def main():
@@ -21,6 +23,8 @@ def main():
     print(f"Using device: {device}")
 
     data_dir, results_dir = get_paths()
+
+    setup_mlflow()
 
     print("Loading Miguel_64 dataset...")
     m_train_data, m_train_as, m_test_data, m_test_as = load_miguel_data(data_dir, args.dry_run)
@@ -48,10 +52,17 @@ def main():
     epochs = 2 if args.dry_run else args.epochs
     print(f"\nStarting training for {epochs} epochs...")
 
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_name = f"fno3d-vlasov-{timestamp}"
+
     val_loss_rel, val_loss_mse = train(
         model, train_loader, test_loader, optimizer, scheduler,
-        criterion_rel, criterion_mse, epochs, device, results_dir
+        criterion_rel, criterion_mse, epochs, device, results_dir, run_name=run_name
     )
+
+    mlflow.log_param("batch_size", args.batch_size)
+    mlflow.log_param("lr", args.lr)
+    mlflow.log_param("max_step", args.max_step)
 
     gabriela_errors, plot_data, mean_g_error = evaluate_gabriela(model, data_dir, device)
 
