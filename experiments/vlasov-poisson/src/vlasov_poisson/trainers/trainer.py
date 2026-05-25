@@ -1,19 +1,14 @@
 import json
 import time
-import contextlib
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-import mlflow
+import wandb
 from matplotlib import pyplot as plt
 from tqdm.auto import tqdm
 
-from vlasov_poisson.datasets.dataset import VlasovPoissonDataset, load_miguel_data
-from vlasov_poisson.losses.spectral import RelativeL2Loss
-from vlasov_poisson.utils.mlflow_utils import setup_mlflow
-from vlasov_poisson.models.fno import create_model
+from vlasov_poisson.utils.wandb_utils import log_artifact
 
 
 def train_epoch(model, train_loader, optimizer, criterion_rel, criterion_mse, device, epoch, epochs):
@@ -80,41 +75,40 @@ def validate(model, test_loader, criterion_rel, criterion_mse, device, epoch, ep
     return val_loss_rel, val_loss_mse
 
 
-def train(model, train_loader, test_loader, optimizer, scheduler, criterion_rel, criterion_mse, epochs, device, results_dir, run_name=None):
-    setup_mlflow()
+def train(model, train_loader, test_loader, optimizer, scheduler, criterion_rel, criterion_mse, epochs, device, results_dir, run=None):
+    if run is not None:
+        run.config.update({"optimizer": "AdamW", "scheduler": "CosineAnnealingLR"}, allow_val_change=True)
 
-    active_run = mlflow.active_run()
-    run_ctx = mlflow.start_run(run_name=run_name) if active_run is None else contextlib.nullcontext()
+    for epoch in range(epochs):
+        t_epoch_start = time.time()
+        train_loss_rel, train_loss_mse = train_epoch(model, train_loader, optimizer, criterion_rel, criterion_mse, device, epoch, epochs)
+        val_loss_rel, val_loss_mse = validate(model, test_loader, criterion_rel, criterion_mse, device, epoch, epochs)
+        scheduler.step()
 
-    with run_ctx:
-        mlflow.log_param("epochs", epochs)
-        mlflow.log_param("optimizer", "AdamW")
-        mlflow.log_param("scheduler", "CosineAnnealingLR")
+        epoch_metrics = {
+            "epoch": epoch + 1,
+            "train/rel_l2": train_loss_rel,
+            "train/mse": train_loss_mse,
+            "val/rel_l2": val_loss_rel,
+            "val/mse": val_loss_mse,
+            "lr": optimizer.param_groups[0]["lr"],
+            "epoch_time_sec": time.time() - t_epoch_start,
+        }
+        if run is not None:
+            run.log(epoch_metrics, step=epoch + 1)
 
-        for epoch in range(epochs):
-            t_epoch_start = time.time()
-            train_loss_rel, train_loss_mse = train_epoch(model, train_loader, optimizer, criterion_rel, criterion_mse, device, epoch, epochs)
-            val_loss_rel, val_loss_mse = validate(model, test_loader, criterion_rel, criterion_mse, device, epoch, epochs)
-            scheduler.step()
+        tqdm.write(
+            f"Epoch {epoch + 1:03d}/{epochs:03d} | "
+            f"train rel_l2={train_loss_rel:.4f} mse={train_loss_mse:.6f} | "
+            f"val rel_l2={val_loss_rel:.4f} mse={val_loss_mse:.6f} | "
+            f"lr={optimizer.param_groups[0]['lr']:.2e} | "
+            f"time={epoch_metrics['epoch_time_sec']:.1f}s"
+        )
 
-            mlflow.log_metric("train_rel_l2", train_loss_rel, step=epoch)
-            mlflow.log_metric("train_mse", train_loss_mse, step=epoch)
-            mlflow.log_metric("val_rel_l2", val_loss_rel, step=epoch)
-            mlflow.log_metric("val_mse", val_loss_mse, step=epoch)
-
-            tqdm.write(
-                f"Epoch {epoch + 1:03d}/{epochs:03d} | "
-                f"train rel_l2={train_loss_rel:.4f} mse={train_loss_mse:.6f} | "
-                f"val rel_l2={val_loss_rel:.4f} mse={val_loss_mse:.6f} | "
-                f"lr={optimizer.param_groups[0]['lr']:.2e} | "
-                f"time={time.time() - t_epoch_start:.1f}s"
-            )
-
-        model_path = results_dir / "fno3d_checkpoint.pt"
-        torch.save(model.state_dict(), model_path)
-        mlflow.log_artifact(str(model_path))
-        mlflow.pytorch.log_model(model, "fno3d-model", registered_model_name="fno3d-vlasov")
-        print(f"\nSaved model checkpoint to: {model_path}")
+    model_path = results_dir / "fno3d_checkpoint.pt"
+    torch.save(model.state_dict(), model_path)
+    log_artifact(model_path, "model")
+    print(f"\nSaved model checkpoint to: {model_path}")
 
     return val_loss_rel, val_loss_mse
 
@@ -188,7 +182,8 @@ def evaluate_gabriela(model, data_dir, device):
 
     mean_g_error = np.mean(gabriela_errors)
     print(f"\nMean Relative L2 Error on Gabriela Dataset: {mean_g_error:.4f}")
-    mlflow.log_metric("gabriela_mean_rel_l2", mean_g_error)
+    if wandb.run is not None:
+        wandb.log({"gabriela/mean_rel_l2": mean_g_error})
     return gabriela_errors, plot_data, mean_g_error
 
 

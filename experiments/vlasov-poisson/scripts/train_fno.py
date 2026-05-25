@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import torch
 from datetime import datetime
 from torch.utils.data import DataLoader
-import mlflow
+import wandb
 
 from vlasov_poisson.config.schema import get_args, get_paths, get_training_value, load_config
 from vlasov_poisson.datasets.dataset import VlasovPoissonDataset, load_miguel_data
@@ -19,13 +19,14 @@ from vlasov_poisson.trainers.trainer import (
     plot_miguel_comparison,
     save_metrics,
 )
-from vlasov_poisson.utils.mlflow_utils import setup_mlflow
+from vlasov_poisson.utils.wandb_utils import init_wandb, log_artifact
 
 
 def main():
     args = get_args()
     config = load_config(args.config)
     training_config = config.get("training", {})
+    wandb_config_file = config.get("logging", {}).get("wandb", {})
 
     batch_size = int(get_training_value(config, args, "batch_size", default=4))
     epochs = int(get_training_value(config, args, "num_epochs", arg_name="epochs", default=15))
@@ -33,14 +34,15 @@ def main():
     lr = float(get_training_value(config, args, "learning_rate", arg_name="lr", default=1e-3))
     max_step = int(get_training_value(config, args, "max_step", default=50))
     weight_decay = float(training_config.get("weight_decay", 1e-4))
+    wandb_project = args.wandb_project or wandb_config_file.get("project", "vlasov-poisson")
+    wandb_entity = args.wandb_entity or wandb_config_file.get("entity")
+    wandb_mode = args.wandb_mode or wandb_config_file.get("mode", "online")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Config: {args.config}")
     print(f"Device: {device}")
 
     data_dir, results_dir = get_paths()
-
-    setup_mlflow(tracking_dir=args.mlruns_dir)
 
     print("Loading Miguel_64 dataset...")
     m_train_data, m_train_as, m_test_data, m_test_as = load_miguel_data(data_dir, args.dry_run, args.lazy_load)
@@ -77,16 +79,33 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_name = f"fno3d-vlasov-{timestamp}"
 
-    with mlflow.start_run(run_name=run_name) as run:
-        mlflow.log_param("config", args.config)
-        mlflow.log_param("batch_size", batch_size)
-        mlflow.log_param("lr", lr)
-        mlflow.log_param("weight_decay", weight_decay)
-        mlflow.log_param("max_step", max_step)
+    wandb_config = {
+        **config,
+        "training": {
+            **training_config,
+            "batch_size": batch_size,
+            "num_epochs": epochs,
+            "learning_rate": lr,
+            "max_step": max_step,
+            "weight_decay": weight_decay,
+            "dry_run": args.dry_run,
+            "lazy_load": args.lazy_load,
+        },
+        "device": str(device),
+    }
+
+    with init_wandb(
+        project=wandb_project,
+        entity=wandb_entity,
+        mode=wandb_mode,
+        run_name=run_name,
+        config=wandb_config,
+        config_path=args.config,
+    ) as run:
 
         val_loss_rel, val_loss_mse = train(
             model, train_loader, test_loader, optimizer, scheduler,
-            criterion_rel, criterion_mse, epochs, device, results_dir, run_name=run_name
+            criterion_rel, criterion_mse, epochs, device, results_dir, run=run
         )
 
         gabriela_errors, plot_data, mean_g_error = evaluate_gabriela(model, data_dir, device)
@@ -98,15 +117,17 @@ def main():
 
         gabriela_plot = results_dir / "gabriela_fno_prediction.png"
         if gabriela_plot.exists():
-            mlflow.log_artifact(str(gabriela_plot))
+            wandb.log({"gabriela_prediction": wandb.Image(str(gabriela_plot))})
+            log_artifact(gabriela_plot, "plot")
 
         miguel_plot = results_dir / "miguel_fno_prediction.png"
         if miguel_plot.exists():
-            mlflow.log_artifact(str(miguel_plot))
+            wandb.log({"miguel_prediction": wandb.Image(str(miguel_plot))})
+            log_artifact(miguel_plot, "plot")
 
         metrics_file = results_dir / "fno3d_evaluation_metrics.json"
         if metrics_file.exists():
-            mlflow.log_artifact(str(metrics_file))
+            log_artifact(metrics_file, "metrics")
 
 
 if __name__ == "__main__":
