@@ -1,54 +1,28 @@
 import json
 import time
+import contextlib
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import mlflow
 from matplotlib import pyplot as plt
 
 from nops.fno.models.original import FNO
-from .data import VlasovPoissonDataset
+from .data import VlasovPoissonDataset, load_miguel_data
 from .losses import RelativeL2Loss
-
-
-def load_miguel_data(data_dir, dry_run=False):
-    m_dir = data_dir / "miguel_64" / "density"
-    m_files = sorted(list(m_dir.glob("*.npy")), key=lambda f: float(f.stem.split("_")[1]), reverse=True)
-    m_zs = [float(f.stem.split("_")[1]) for f in m_files]
-    m_as = torch.tensor([1.0 / (1.0 + z) for z in m_zs], dtype=torch.float32)
-
-    if dry_run:
-        m_files = m_files[:100]
-        m_as = m_as[:100]
-
-    snapshots = []
-    t0 = time.time()
-    for f in m_files:
-        snapshots.append(torch.from_numpy(np.load(f).astype(np.float32)))
-    m_data = torch.stack(snapshots, dim=0)
-    print(f"  Finished loading in {time.time() - t0:.2f}s. Shape: {m_data.shape}")
-
-    num_snapshots = len(m_files)
-    train_split = int(num_snapshots * 0.8)
-
-    m_train_data = m_data[:train_split]
-    m_train_as = m_as[:train_split]
-    m_test_data = m_data[train_split:]
-    m_test_as = m_as[train_split:]
-
-    print(f"  Train snapshots: {m_train_data.shape[0]} | Test snapshots: {m_test_data.shape[0]}")
-    return m_train_data, m_train_as, m_test_data, m_test_as
+from .mlflow_utils import setup_mlflow
 
 
 def create_model(device):
     model = FNO(
         modes=[8, 8, 8],
-        num_fourier_layers=3,
+        num_fourier_layers=2,
         in_channels=2,
         lifting_channels=16,
         projection_channels=16,
         out_channels=1,
-        mid_channels=32,
+        mid_channels=16,
         activation=nn.GELU(),
         add_grid=True,
         n_fno_blocks_per_layer=1,
@@ -108,25 +82,13 @@ def validate(model, test_loader, criterion_rel, criterion_mse, device):
     return val_loss_rel, val_loss_mse
 
 
-import json
-import time
-import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import mlflow
-from matplotlib import pyplot as plt
-
-from nops.fno.models.original import FNO
-from .data import VlasovPoissonDataset
-from .losses import RelativeL2Loss
-from .mlflow_utils import setup_mlflow
-
-
 def train(model, train_loader, test_loader, optimizer, scheduler, criterion_rel, criterion_mse, epochs, device, results_dir, run_name=None):
     setup_mlflow()
 
-    with mlflow.start_run(run_name=run_name) as run:
+    active_run = mlflow.active_run()
+    run_ctx = mlflow.start_run(run_name=run_name) if active_run is None else contextlib.nullcontext()
+
+    with run_ctx:
         mlflow.log_param("epochs", epochs)
         mlflow.log_param("optimizer", "AdamW")
         mlflow.log_param("scheduler", "CosineAnnealingLR")

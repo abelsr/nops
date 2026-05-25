@@ -25,7 +25,7 @@ class VlasovPoissonDataset(Dataset):
 
     def _load_snapshot(self, idx):
         if self.lazy:
-            return np.load(self.file_paths[idx]).astype(np.float32)
+            return torch.from_numpy(np.load(self.file_paths[idx]).astype(np.float32))
         return self.data_tensor[idx]
 
     def __getitem__(self, idx):
@@ -38,8 +38,8 @@ class VlasovPoissonDataset(Dataset):
             if j <= i:
                 j = min(i + 1, self.N - 1)
 
-        rho_in = torch.from_numpy(self._load_snapshot(i))
-        rho_out = torch.from_numpy(self._load_snapshot(j))
+        rho_in = self._load_snapshot(i)
+        rho_out = self._load_snapshot(j)
         delta_a = self.a_values[j] - self.a_values[i]
 
         delta_a_channel = torch.full_like(rho_in, delta_a)

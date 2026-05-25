@@ -3,8 +3,12 @@ import torch
 from pathlib import Path
 
 
-def setup_mlflow(experiment_name="vlasov-fno-training", tracking_dir="./mlruns"):
-    mlflow.set_tracking_uri(f"file://{tracking_dir}")
+def setup_mlflow(experiment_name="vlasov-fno-training", tracking_dir=None):
+    if tracking_dir is None:
+        tracking_dir = Path.cwd() / "experiments" / "vlasov-poisson" / "mlruns"
+    else:
+        tracking_dir = Path(tracking_dir).resolve()
+    mlflow.set_tracking_uri(str(tracking_dir))
     mlflow.set_experiment(experiment_name)
 
 

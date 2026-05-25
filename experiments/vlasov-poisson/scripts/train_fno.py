@@ -1,6 +1,7 @@
 import torch
 from datetime import datetime
 from torch.utils.data import DataLoader
+import mlflow
 
 from .config import get_args, get_paths
 from .data import VlasovPoissonDataset
@@ -56,21 +57,35 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_name = f"fno3d-vlasov-{timestamp}"
 
-    val_loss_rel, val_loss_mse = train(
-        model, train_loader, test_loader, optimizer, scheduler,
-        criterion_rel, criterion_mse, epochs, device, results_dir, run_name=run_name
-    )
+    with mlflow.start_run(run_name=run_name) as run:
+        mlflow.log_param("batch_size", args.batch_size)
+        mlflow.log_param("lr", args.lr)
+        mlflow.log_param("max_step", args.max_step)
 
-    mlflow.log_param("batch_size", args.batch_size)
-    mlflow.log_param("lr", args.lr)
-    mlflow.log_param("max_step", args.max_step)
+        val_loss_rel, val_loss_mse = train(
+            model, train_loader, test_loader, optimizer, scheduler,
+            criterion_rel, criterion_mse, epochs, device, results_dir, run_name=run_name
+        )
 
-    gabriela_errors, plot_data, mean_g_error = evaluate_gabriela(model, data_dir, device)
+        gabriela_errors, plot_data, mean_g_error = evaluate_gabriela(model, data_dir, device)
 
-    plot_gabriela_comparison(plot_data, results_dir)
-    plot_miguel_comparison(model, test_dataset, device, results_dir)
+        plot_gabriela_comparison(plot_data, results_dir)
+        plot_miguel_comparison(model, test_dataset, device, results_dir)
 
-    save_metrics(val_loss_rel, val_loss_mse, gabriela_errors, mean_g_error, results_dir)
+        save_metrics(val_loss_rel, val_loss_mse, gabriela_errors, mean_g_error, results_dir)
+
+        # Log artifact files to MLflow
+        gabriela_plot = results_dir / "gabriela_fno_prediction.png"
+        if gabriela_plot.exists():
+            mlflow.log_artifact(str(gabriela_plot))
+
+        miguel_plot = results_dir / "miguel_fno_prediction.png"
+        if miguel_plot.exists():
+            mlflow.log_artifact(str(miguel_plot))
+
+        metrics_file = results_dir / "fno3d_evaluation_metrics.json"
+        if metrics_file.exists():
+            mlflow.log_artifact(str(metrics_file))
 
 
 if __name__ == "__main__":
