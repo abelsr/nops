@@ -1,0 +1,31 @@
+model:
+  name: VlasovPoisson
+  params:
+    modes: [8, 8, 8]
+    num_fourier_layers: 2
+    in_channels: 2
+    lifting_channels: 16
+    projection_channels: 16
+    out_channels: 1
+    mid_channels: 16
+    activation: GELU
+    add_grid: true
+    n_fno_blocks_per_layer: 1
+    dropout: 0.05
+
+training:
+  batch_size: 16
+  num_epochs: 100
+  max_step: 50
+  num_samples: 5000
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  scheduler:
+    name: CosineAnnealingLR
+    params:
+      T_max: 100
+      eta_min: 0.00001
+  early_stopping:
+    patience: 10
+    min_delta: 0.001
+  seed: 42

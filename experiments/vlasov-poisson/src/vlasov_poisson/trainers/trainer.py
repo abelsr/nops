@@ -1,45 +1,29 @@
 import json
 import time
 import contextlib
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import mlflow
 from matplotlib import pyplot as plt
+from tqdm.auto import tqdm
 
-from nops.fno.models.original import FNO
-from .data import VlasovPoissonDataset, load_miguel_data
-from .losses import RelativeL2Loss
-from .mlflow_utils import setup_mlflow
-
-
-def create_model(device):
-    model = FNO(
-        modes=[8, 8, 8],
-        num_fourier_layers=2,
-        in_channels=2,
-        lifting_channels=16,
-        projection_channels=16,
-        out_channels=1,
-        mid_channels=16,
-        activation=nn.GELU(),
-        add_grid=True,
-        n_fno_blocks_per_layer=1,
-        dropout=0.05
-    )
-    model = model.to(device)
-    params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"  FNO3D parameter count: {params:,}")
-    return model
+from vlasov_poisson.datasets.dataset import VlasovPoissonDataset, load_miguel_data
+from vlasov_poisson.losses.spectral import RelativeL2Loss
+from vlasov_poisson.utils.mlflow_utils import setup_mlflow
+from vlasov_poisson.models.fno import create_model
 
 
-def train_epoch(model, train_loader, optimizer, criterion_rel, criterion_mse, device, scheduler):
+def train_epoch(model, train_loader, optimizer, criterion_rel, criterion_mse, device, epoch, epochs):
     model.train()
     train_loss_rel = 0.0
     train_loss_mse = 0.0
+    seen = 0
 
-    for x, y in train_loader:
+    progress = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs} train", leave=False)
+    for x, y in progress:
         x, y = x.to(device), y.to(device)
         optimizer.zero_grad()
 
@@ -54,20 +38,28 @@ def train_epoch(model, train_loader, optimizer, criterion_rel, criterion_mse, de
 
         train_loss_rel += loss_rel.item() * x.size(0)
         train_loss_mse += loss_mse.item() * x.size(0)
+        seen += x.size(0)
+
+        progress.set_postfix(
+            rel_l2=f"{train_loss_rel / seen:.4f}",
+            mse=f"{train_loss_mse / seen:.6f}",
+            lr=f"{optimizer.param_groups[0]['lr']:.2e}",
+        )
 
     train_loss_rel /= len(train_loader.dataset)
     train_loss_mse /= len(train_loader.dataset)
-    scheduler.step()
     return train_loss_rel, train_loss_mse
 
 
-def validate(model, test_loader, criterion_rel, criterion_mse, device):
+def validate(model, test_loader, criterion_rel, criterion_mse, device, epoch, epochs):
     model.eval()
     val_loss_rel = 0.0
     val_loss_mse = 0.0
+    seen = 0
 
     with torch.no_grad():
-        for x, y in test_loader:
+        progress = tqdm(test_loader, desc=f"Epoch {epoch + 1}/{epochs} val  ", leave=False)
+        for x, y in progress:
             x, y = x.to(device), y.to(device)
             pred = model(x)
 
@@ -76,6 +68,12 @@ def validate(model, test_loader, criterion_rel, criterion_mse, device):
 
             val_loss_rel += loss_rel.item() * x.size(0)
             val_loss_mse += loss_mse.item() * x.size(0)
+            seen += x.size(0)
+
+            progress.set_postfix(
+                rel_l2=f"{val_loss_rel / seen:.4f}",
+                mse=f"{val_loss_mse / seen:.6f}",
+            )
 
     val_loss_rel /= len(test_loader.dataset)
     val_loss_mse /= len(test_loader.dataset)
@@ -95,16 +93,22 @@ def train(model, train_loader, test_loader, optimizer, scheduler, criterion_rel,
 
         for epoch in range(epochs):
             t_epoch_start = time.time()
-            train_loss_rel, train_loss_mse = train_epoch(model, train_loader, optimizer, criterion_rel, criterion_mse, device, scheduler)
-            val_loss_rel, val_loss_mse = validate(model, test_loader, criterion_rel, criterion_mse, device)
+            train_loss_rel, train_loss_mse = train_epoch(model, train_loader, optimizer, criterion_rel, criterion_mse, device, epoch, epochs)
+            val_loss_rel, val_loss_mse = validate(model, test_loader, criterion_rel, criterion_mse, device, epoch, epochs)
+            scheduler.step()
 
             mlflow.log_metric("train_rel_l2", train_loss_rel, step=epoch)
             mlflow.log_metric("train_mse", train_loss_mse, step=epoch)
             mlflow.log_metric("val_rel_l2", val_loss_rel, step=epoch)
             mlflow.log_metric("val_mse", val_loss_mse, step=epoch)
 
-            print(f"Epoch {epoch+1:02d}/{epochs:02d} | Train RelL2: {train_loss_rel:.4f}, MSE: {train_loss_mse:.6f} | "
-                  f"Val RelL2: {val_loss_rel:.4f}, MSE: {val_loss_mse:.6f} | Time: {time.time() - t_epoch_start:.1f}s")
+            tqdm.write(
+                f"Epoch {epoch + 1:03d}/{epochs:03d} | "
+                f"train rel_l2={train_loss_rel:.4f} mse={train_loss_mse:.6f} | "
+                f"val rel_l2={val_loss_rel:.4f} mse={val_loss_mse:.6f} | "
+                f"lr={optimizer.param_groups[0]['lr']:.2e} | "
+                f"time={time.time() - t_epoch_start:.1f}s"
+            )
 
         model_path = results_dir / "fno3d_checkpoint.pt"
         torch.save(model.state_dict(), model_path)
