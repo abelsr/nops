@@ -9,7 +9,8 @@ def get_args():
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--max-step", type=int, default=50, help="Maximum snapshot index difference for a pair")
     parser.add_argument("--dry-run", action="store_true", help="Run a quick dry run to verify the training pipeline")
-    parser.add_argument("--mlruns-dir", type=str, default="./mlruns", help="MLflow tracking directory")
+    parser.add_argument("--lazy-load", action="store_true", help="Load data on-demand instead of pre-loading all snapshots")
+    parser.add_argument("--mlruns-dir", type=str, default="experiments/vlasov-poisson/mlruns", help="MLflow tracking directory")
     return parser.parse_args()
 
 

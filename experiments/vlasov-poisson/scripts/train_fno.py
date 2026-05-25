@@ -24,18 +24,19 @@ def main():
 
     data_dir, results_dir = get_paths()
 
-    setup_mlflow()
+    setup_mlflow(tracking_dir=args.mlruns_dir)
 
     print("Loading Miguel_64 dataset...")
-    m_train_data, m_train_as, m_test_data, m_test_as = load_miguel_data(data_dir, args.dry_run)
+    m_train_data, m_train_as, m_test_data, m_test_as = load_miguel_data(data_dir, args.dry_run, args.lazy_load)
 
     train_dataset = VlasovPoissonDataset(
         m_train_data, m_train_as, is_train=True,
-        max_step=args.max_step, num_samples=1000 if args.dry_run else 5000
+        max_step=args.max_step, num_samples=1000 if args.dry_run else 5000,
+        lazy=args.lazy_load
     )
     test_dataset = VlasovPoissonDataset(
         m_test_data, m_test_as, is_train=False,
-        max_step=args.max_step
+        max_step=args.max_step, lazy=args.lazy_load
     )
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=2)
