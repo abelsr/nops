@@ -31,7 +31,15 @@ class VlasovPoissonDataset(Dataset):
     def __getitem__(self, idx):
         if self.is_train:
             i = np.random.randint(0, self.N - 1)
-            j = np.random.randint(i + 1, min(i + self.max_step + 1, self.N))
+            max_possible_step = min(self.max_step, self.N - 1 - i)
+            if max_possible_step <= 1:
+                k = 1
+            else:
+                log_max = np.log(max_possible_step)
+                u = np.random.uniform(0, log_max)
+                k = int(np.exp(u))
+                k = max(1, min(k, max_possible_step))
+            j = i + k
         else:
             i = idx
             j = min(i + max(1, self.max_step // 2), self.N - 1)
