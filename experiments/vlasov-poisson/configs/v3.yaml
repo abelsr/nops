@@ -1,11 +1,11 @@
 model:
   name: VlasovPoisson
   params:
-    modes: [8, 8, 8]
-    num_fourier_layers: 1
+    modes: [16, 16, 16]
+    num_fourier_layers: 2
     in_channels: 2
-    lifting_channels: 8
-    projection_channels: 8
+    lifting_channels: 16
+    projection_channels: 16
     out_channels: 1
     mid_channels: 16
     activation: GELU
@@ -33,5 +33,5 @@ training:
 logging:
   wandb:
     project: vlasov-poisson
-    name: v1
+    name: v3
     mode: online
