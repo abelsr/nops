@@ -6,19 +6,30 @@ import torch
 import torch.nn.functional as F
 import wandb
 from matplotlib import pyplot as plt
-from tqdm.auto import tqdm
+from rich.console import Console
+from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeElapsedColumn
 
 from vlasov_poisson.utils.wandb_utils import log_artifact
 
+console = Console()
 
-def train_epoch(model, train_loader, optimizer, criterion_rel, criterion_mse, device, epoch, epochs):
+
+def _format_progress_metrics(train_rel=None, train_mse=None, test_rel=None, test_mse=None, lr=None):
+    train_rel = "--" if train_rel is None else f"{train_rel:.4f}"
+    train_mse = "--" if train_mse is None else f"{train_mse:.6f}"
+    test_rel = "--" if test_rel is None else f"{test_rel:.4f}"
+    test_mse = "--" if test_mse is None else f"{test_mse:.6f}"
+    lr = "--" if lr is None else f"{lr:.2e}"
+    return f"train rel_l2={train_rel} mse={train_mse} | test rel_l2={test_rel} mse={test_mse} | lr={lr}"
+
+
+def train_epoch(model, train_loader, optimizer, criterion_rel, criterion_mse, device, progress, task_id):
     model.train()
     train_loss_rel = 0.0
     train_loss_mse = 0.0
     seen = 0
 
-    progress = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs} train", leave=False)
-    for x, y in progress:
+    for x, y in train_loader:
         x, y = x.to(device), y.to(device)
         optimizer.zero_grad()
 
@@ -35,10 +46,15 @@ def train_epoch(model, train_loader, optimizer, criterion_rel, criterion_mse, de
         train_loss_mse += loss_mse.item() * x.size(0)
         seen += x.size(0)
 
-        progress.set_postfix(
-            rel_l2=f"{train_loss_rel / seen:.4f}",
-            mse=f"{train_loss_mse / seen:.6f}",
-            lr=f"{optimizer.param_groups[0]['lr']:.2e}",
+        progress.update(
+            task_id,
+            advance=1,
+            phase="train",
+            metrics=_format_progress_metrics(
+                train_rel=train_loss_rel / seen,
+                train_mse=train_loss_mse / seen,
+                lr=optimizer.param_groups[0]["lr"],
+            ),
         )
 
     train_loss_rel /= len(train_loader.dataset)
@@ -46,15 +62,14 @@ def train_epoch(model, train_loader, optimizer, criterion_rel, criterion_mse, de
     return train_loss_rel, train_loss_mse
 
 
-def validate(model, test_loader, criterion_rel, criterion_mse, device, epoch, epochs):
+def validate(model, test_loader, criterion_rel, criterion_mse, device, progress, task_id, train_loss_rel, train_loss_mse, optimizer):
     model.eval()
     val_loss_rel = 0.0
     val_loss_mse = 0.0
     seen = 0
 
     with torch.no_grad():
-        progress = tqdm(test_loader, desc=f"Epoch {epoch + 1}/{epochs} val  ", leave=False)
-        for x, y in progress:
+        for x, y in test_loader:
             x, y = x.to(device), y.to(device)
             pred = model(x)
 
@@ -65,9 +80,17 @@ def validate(model, test_loader, criterion_rel, criterion_mse, device, epoch, ep
             val_loss_mse += loss_mse.item() * x.size(0)
             seen += x.size(0)
 
-            progress.set_postfix(
-                rel_l2=f"{val_loss_rel / seen:.4f}",
-                mse=f"{val_loss_mse / seen:.6f}",
+            progress.update(
+                task_id,
+                advance=1,
+                phase="test",
+                metrics=_format_progress_metrics(
+                    train_rel=train_loss_rel,
+                    train_mse=train_loss_mse,
+                    test_rel=val_loss_rel / seen,
+                    test_mse=val_loss_mse / seen,
+                    lr=optimizer.param_groups[0]["lr"],
+                ),
             )
 
     val_loss_rel /= len(test_loader.dataset)
@@ -81,26 +104,57 @@ def train(model, train_loader, test_loader, optimizer, scheduler, criterion_rel,
 
     for epoch in range(epochs):
         t_epoch_start = time.time()
-        train_loss_rel, train_loss_mse = train_epoch(model, train_loader, optimizer, criterion_rel, criterion_mse, device, epoch, epochs)
-        val_loss_rel, val_loss_mse = validate(model, test_loader, criterion_rel, criterion_mse, device, epoch, epochs)
+
+        progress = Progress(
+            TextColumn("[bold blue]{task.description}"),
+            TextColumn("[{task.fields[phase]}]"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TextColumn("{task.fields[metrics]}"),
+            console=console,
+            transient=True,
+        )
+        with progress:
+            task_id = progress.add_task(
+                f"Epoch {epoch + 1:03d}/{epochs:03d}",
+                total=len(train_loader) + len(test_loader),
+                phase="train",
+                metrics=_format_progress_metrics(lr=optimizer.param_groups[0]["lr"]),
+            )
+            train_loss_rel, train_loss_mse = train_epoch(
+                model, train_loader, optimizer, criterion_rel, criterion_mse, device, progress, task_id
+            )
+            val_loss_rel, val_loss_mse = validate(
+                model,
+                test_loader,
+                criterion_rel,
+                criterion_mse,
+                device,
+                progress,
+                task_id,
+                train_loss_rel,
+                train_loss_mse,
+                optimizer,
+            )
         scheduler.step()
 
         epoch_metrics = {
             "epoch": epoch + 1,
             "train/rel_l2": train_loss_rel,
             "train/mse": train_loss_mse,
-            "val/rel_l2": val_loss_rel,
-            "val/mse": val_loss_mse,
+            "test/rel_l2": val_loss_rel,
+            "test/mse": val_loss_mse,
             "lr": optimizer.param_groups[0]["lr"],
             "epoch_time_sec": time.time() - t_epoch_start,
         }
         if run is not None:
             run.log(epoch_metrics, step=epoch + 1)
 
-        tqdm.write(
+        console.print(
             f"Epoch {epoch + 1:03d}/{epochs:03d} | "
             f"train rel_l2={train_loss_rel:.4f} mse={train_loss_mse:.6f} | "
-            f"val rel_l2={val_loss_rel:.4f} mse={val_loss_mse:.6f} | "
+            f"test rel_l2={val_loss_rel:.4f} mse={val_loss_mse:.6f} | "
             f"lr={optimizer.param_groups[0]['lr']:.2e} | "
             f"time={epoch_metrics['epoch_time_sec']:.1f}s"
         )

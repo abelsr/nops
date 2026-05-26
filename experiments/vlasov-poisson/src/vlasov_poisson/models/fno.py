@@ -4,6 +4,15 @@ import torch.nn as nn
 from nops.fno.models.original import FNO
 
 
+def _format_size(num_bytes: int) -> str:
+    units = ("B", "KB", "MB", "GB", "TB")
+    size = float(num_bytes)
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            return f"{size:.2f} {unit}"
+        size /= 1024
+
+
 class FNOConfig:
     def __init__(self, modes=None, num_fourier_layers=2, in_channels=2,
                  lifting_channels=16, projection_channels=16, out_channels=1,
@@ -48,5 +57,6 @@ def create_model(config: FNOConfig, device: torch.device) -> nn.Module:
     )
     model = model.to(device)
     params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"  FNO3D parameter count: {params:,}")
+    model_bytes = sum(p.numel() * p.element_size() for p in model.parameters() if p.requires_grad)
+    print(f"  FNO3D parameters: {params:,} ({_format_size(model_bytes)})")
     return model
