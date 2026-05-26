@@ -12,6 +12,7 @@ class VlasovPoissonDataset(Dataset):
         else:
             self.data_tensor = data_tensor
             self.a_values = a_values
+        self.a_values_np = self.a_values.detach().cpu().numpy() if torch.is_tensor(self.a_values) else np.asarray(self.a_values)
         self.is_train = is_train
         self.max_step = max_step
         self.num_samples = num_samples
@@ -33,13 +34,18 @@ class VlasovPoissonDataset(Dataset):
             i = np.random.randint(0, self.N - 1)
             max_possible_step = min(self.max_step, self.N - 1 - i)
             if max_possible_step <= 1:
-                k = 1
+                j = i + 1
             else:
-                log_max = np.log(max_possible_step)
-                u = np.random.uniform(0, log_max)
-                k = int(np.exp(u))
-                k = max(1, min(k, max_possible_step))
-            j = i + k
+                max_j = i + max_possible_step
+                min_delta_a = self.a_values_np[i + 1] - self.a_values_np[i]
+                max_delta_a = self.a_values_np[max_j] - self.a_values_np[i]
+                if min_delta_a <= 0 or max_delta_a <= min_delta_a:
+                    j = np.random.randint(i + 1, max_j + 1)
+                else:
+                    log_delta_a = np.random.uniform(np.log(min_delta_a), np.log(max_delta_a))
+                    target_a = self.a_values_np[i] + np.exp(log_delta_a)
+                    j = np.searchsorted(self.a_values_np, target_a, side="left")
+                    j = max(i + 1, min(j, max_j))
         else:
             i = idx
             j = min(i + max(1, self.max_step // 2), self.N - 1)
