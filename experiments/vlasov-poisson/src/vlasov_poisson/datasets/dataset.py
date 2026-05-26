@@ -86,13 +86,20 @@ def load_miguel_data(data_dir, dry_run=False, lazy=False, split_strategy="chrono
         print(f"  Eager mode: loaded {len(m_files)} snapshots in {time.time() - t0:.2f}s. Shape: {m_files.shape}")
 
     num_snapshots = len(m_as)
+    def select_data(data, indices):
+        if torch.is_tensor(data):
+            return data[indices]
+        return [data[i] for i in indices.tolist()]
+
     if split_strategy == "interleaved":
         test_stride = max(2, round(1.0 / (1.0 - train_fraction)))
         test_idx = np.arange(num_snapshots) % test_stride == test_stride - 1
         train_idx = ~test_idx
-        m_train_data = m_files[train_idx]
+        train_idx = torch.from_numpy(np.flatnonzero(train_idx))
+        test_idx = torch.from_numpy(np.flatnonzero(test_idx))
+        m_train_data = select_data(m_files, train_idx)
         m_train_as = m_as[train_idx]
-        m_test_data = m_files[test_idx]
+        m_test_data = select_data(m_files, test_idx)
         m_test_as = m_as[test_idx]
     elif split_strategy == "chronological":
         train_split = int(num_snapshots * train_fraction)
