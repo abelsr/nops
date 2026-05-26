@@ -34,6 +34,8 @@ def main():
     lr = float(get_training_value(config, args, "learning_rate", arg_name="lr", default=1e-3))
     max_step = int(get_training_value(config, args, "max_step", default=50))
     weight_decay = float(training_config.get("weight_decay", 1e-4))
+    split_strategy = training_config.get("split_strategy", "chronological")
+    train_fraction = float(training_config.get("train_fraction", 0.8))
     wandb_project = args.wandb_project or wandb_config_file.get("project", "vlasov-poisson")
     wandb_entity = args.wandb_entity or wandb_config_file.get("entity")
     wandb_mode = args.wandb_mode or wandb_config_file.get("mode", "online")
@@ -45,7 +47,13 @@ def main():
     data_dir, results_dir = get_paths()
 
     print("Loading Miguel_64 dataset...")
-    m_train_data, m_train_as, m_test_data, m_test_as = load_miguel_data(data_dir, args.dry_run, args.lazy_load)
+    m_train_data, m_train_as, m_test_data, m_test_as = load_miguel_data(
+        data_dir,
+        args.dry_run,
+        args.lazy_load,
+        split_strategy=split_strategy,
+        train_fraction=train_fraction,
+    )
 
     train_dataset = VlasovPoissonDataset(
         m_train_data, m_train_as, is_train=True,
@@ -88,6 +96,8 @@ def main():
             "learning_rate": lr,
             "max_step": max_step,
             "weight_decay": weight_decay,
+            "split_strategy": split_strategy,
+            "train_fraction": train_fraction,
             "dry_run": args.dry_run,
             "lazy_load": args.lazy_load,
         },
