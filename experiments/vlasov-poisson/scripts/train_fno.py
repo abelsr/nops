@@ -36,6 +36,7 @@ def main():
     weight_decay = float(training_config.get("weight_decay", 1e-4))
     split_strategy = training_config.get("split_strategy", "chronological")
     train_fraction = float(training_config.get("train_fraction", 0.8))
+    train_on_residual_derivative = bool(training_config.get("train_on_residual_derivative", False))
     wandb_project = args.wandb_project or wandb_config_file.get("project", "vlasov-poisson")
     wandb_entity = args.wandb_entity or wandb_config_file.get("entity")
     wandb_mode = args.wandb_mode or wandb_config_file.get("mode", "online")
@@ -98,6 +99,7 @@ def main():
             "weight_decay": weight_decay,
             "split_strategy": split_strategy,
             "train_fraction": train_fraction,
+            "train_on_residual_derivative": train_on_residual_derivative,
             "dry_run": args.dry_run,
             "lazy_load": args.lazy_load,
         },
@@ -113,17 +115,18 @@ def main():
         config_path=args.config,
     ) as run:
 
-        val_loss_rel, val_loss_mse = train(
+        val_loss_rel, val_loss_mse, val_diagnostics = train(
             model, train_loader, test_loader, optimizer, scheduler,
-            criterion_rel, criterion_mse, epochs, device, results_dir, run=run
+            criterion_rel, criterion_mse, epochs, device, results_dir, run=run,
+            train_on_residual_derivative=train_on_residual_derivative,
         )
 
-        gabriela_errors, plot_data, mean_g_error = evaluate_gabriela(model, data_dir, device)
+        gabriela_errors, plot_data, mean_g_error, gabriela_diagnostics = evaluate_gabriela(model, data_dir, device)
 
         plot_gabriela_comparison(plot_data, results_dir)
         plot_miguel_comparison(model, test_dataset, device, results_dir)
 
-        save_metrics(val_loss_rel, val_loss_mse, gabriela_errors, mean_g_error, results_dir)
+        save_metrics(val_loss_rel, val_loss_mse, val_diagnostics, gabriela_errors, mean_g_error, gabriela_diagnostics, results_dir)
 
         gabriela_plot = results_dir / "gabriela_fno_prediction.png"
         if gabriela_plot.exists():

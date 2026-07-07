@@ -1,0 +1,39 @@
+model:
+  name: VlasovPoisson
+  params:
+    modes: [16, 16, 16]
+    num_fourier_layers: 4
+    in_channels: 2
+    lifting_channels: 128
+    projection_channels: 128
+    out_channels: 1
+    mid_channels: 32
+    activation: GELU
+    add_grid: true
+    n_fno_blocks_per_layer: 2
+    dropout: 0.1
+
+training:
+  batch_size: 32
+  num_epochs: 500
+  max_step: 500
+  num_samples: 5000
+  split_strategy: chronological
+  train_fraction: 0.8
+  learning_rate: 0.0002
+  weight_decay: 0.001
+  scheduler:
+    name: CosineAnnealingLR
+    params:
+      T_max: 50
+      eta_min: 0.000001
+  early_stopping:
+    patience: 10
+    min_delta: 0.001
+  seed: 42
+
+logging:
+  wandb:
+    project: vlasov-poisson
+    name: v8
+    mode: online

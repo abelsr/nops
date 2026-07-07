@@ -29,29 +29,26 @@ class VlasovPoissonDataset(Dataset):
             return torch.from_numpy(np.load(self.file_paths[idx]).astype(np.float32))
         return self.data_tensor[idx]
 
-    def __getitem__(self, idx):
-        if self.is_train:
-            i = np.random.randint(0, self.N - 1)
-            max_possible_step = min(self.max_step, self.N - 1 - i)
-            if max_possible_step <= 1:
-                j = i + 1
-            else:
-                max_j = i + max_possible_step
-                min_delta_a = self.a_values_np[i + 1] - self.a_values_np[i]
-                max_delta_a = self.a_values_np[max_j] - self.a_values_np[i]
-                if min_delta_a <= 0 or max_delta_a <= min_delta_a:
-                    j = np.random.randint(i + 1, max_j + 1)
-                else:
-                    log_delta_a = np.random.uniform(np.log(min_delta_a), np.log(max_delta_a))
-                    target_a = self.a_values_np[i] + np.exp(log_delta_a)
-                    j = np.searchsorted(self.a_values_np, target_a, side="left")
-                    j = max(i + 1, min(j, max_j))
-        else:
-            i = idx
-            j = min(i + max(1, self.max_step // 2), self.N - 1)
-            if j <= i:
-                j = min(i + 1, self.N - 1)
+    def sample_pair_indices(self, rng=None):
+        rng = rng or np.random
+        i = rng.randint(0, self.N - 1)
+        max_possible_step = min(self.max_step, self.N - 1 - i)
+        if max_possible_step <= 1:
+            return i, i + 1
 
+        max_j = i + max_possible_step
+        min_delta_a = self.a_values_np[i + 1] - self.a_values_np[i]
+        max_delta_a = self.a_values_np[max_j] - self.a_values_np[i]
+        if min_delta_a <= 0 or max_delta_a <= min_delta_a:
+            j = rng.randint(i + 1, max_j + 1)
+        else:
+            log_delta_a = rng.uniform(np.log(min_delta_a), np.log(max_delta_a))
+            target_a = self.a_values_np[i] + np.exp(log_delta_a)
+            j = np.searchsorted(self.a_values_np, target_a, side="left")
+            j = max(i + 1, min(j, max_j))
+        return i, j
+
+    def make_pair(self, i, j):
         rho_in = self._load_snapshot(i)
         rho_out = self._load_snapshot(j)
         delta_a = self.a_values[j] - self.a_values[i]
@@ -61,6 +58,17 @@ class VlasovPoissonDataset(Dataset):
         y = rho_out.unsqueeze(0)
 
         return x, y
+
+    def __getitem__(self, idx):
+        if self.is_train:
+            i, j = self.sample_pair_indices()
+        else:
+            i = idx
+            j = min(i + 1, self.N - 1)
+            if j <= i:
+                j = min(i + 1, self.N - 1)
+
+        return self.make_pair(i, j)
 
 
 def load_miguel_data(data_dir, dry_run=False, lazy=False, split_strategy="chronological", train_fraction=0.8):

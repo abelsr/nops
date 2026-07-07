@@ -10,3 +10,24 @@ wandb
 
 *.pt
 *.pth
+
+# Lightning logs
+lightning_logs/
+
+128_modos/
+resultados_mayo/
+resutados_febrero/
+
+*.npy
+*.pkl
+
+checkpoints/
+
+.vscode/
+AGENT.md
+
+# Experiment outputs
+experiments/vlasov-poisson/results/
+experiments/vlasov-poisson/simulations.zip
+experiments/vlasov-poisson/notebooks/02_exploration_data.ipynb
+**/.ipynb_checkpoints/
