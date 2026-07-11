@@ -53,8 +53,10 @@ class FNO(nn.Module):
         self.padding = kwargs.get('padding', None)
         self.n_fno_blocks_per_layer = kwargs.get('n_fno_blocks_per_layer', 2)
         self.dropout = kwargs.get('dropout', 0.0)
-        self.attn_gating = kwargs.get('attn_gating', True)   # <-- NUEVO
-        self.attn_temp   = kwargs.get('attn_temperature', 1.0)  # <-- NUEVO
+        self.attn_gating = kwargs.get('attn_gating', True)
+        self.attn_temp   = kwargs.get('attn_temperature', 1.0)
+        self.factorization = kwargs.get('factorization', 'dense')
+        self.rank = kwargs.get('rank', None)
         self.sizes = [0] * self.dim
         
         
@@ -84,7 +86,7 @@ class FNO(nn.Module):
         # ])
         self.fourier_blocks = nn.ModuleList([
             nn.ModuleList([
-                FourierBlock(modes, self.mid_channels, self.mid_channels, hidden_size=self.mid_channels, activation=activation)
+                FourierBlock(modes, self.mid_channels, self.mid_channels, hidden_size=self.mid_channels, activation=activation, factorization=self.factorization, rank=self.rank)
                 for _ in range(self.n_fno_blocks_per_layer)
             ])
             for _ in range(self.num_fourier_layers)

@@ -1,4 +1,4 @@
-from typing import Literal, List
+from typing import Literal, List, Optional
 
 import torch
 import torch.nn as nn
@@ -9,13 +9,12 @@ from .spectral_convolution import SpectralConvolution
 
 class FourierBlock(nn.Module):
     """
-        # Fourier block.
-        
-        This block consists of three layers:
-        1. Fourier layer: SpectralConvolution
-        2. MLP layer: MLP
-        3. Convolution layer: Convolution
-        
+    Fourier block with configurable spectral factorization.
+
+    Consists of three branches:
+    1. Fourier layer: SpectralConvolution (supports dense/Tucker/CP/TT)
+    2. MLP layer
+    3. Convolution layer
     """
     def __init__(
         self, 
@@ -25,7 +24,9 @@ class FourierBlock(nn.Module):
         hidden_size: int | None = None, 
         activation: nn.Module = nn.GELU(), 
         mid_net_type: Literal['mlp', 'ffn'] = 'mlp',
-        bias: bool = False
+        bias: bool = False,
+        factorization: str = 'dense',
+        rank: Optional[int] = None,
     ) -> None:
         """        
         Parameters:
@@ -53,7 +54,11 @@ class FourierBlock(nn.Module):
         self.bias = bias
         
         # Fourier layer (SpectralConvolution)
-        self.fourier = SpectralConvolution(in_channels, out_channels, modes, factorization='dense')
+        self.fourier = SpectralConvolution(
+            in_channels, out_channels, modes,
+            factorization=factorization,
+            rank=rank if rank is not None else min(in_channels, out_channels),
+        )
         
         # MLP layer
         if self.hidden_size is not None:
