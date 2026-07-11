@@ -32,6 +32,7 @@ class IntegralTransform(nn.Module):
         out_channels: int,
         hidden_channels: int,
         n_layers: int = 1,
+        pos_dim: int = 2,
         activation: callable = F.gelu,
     ):
         super().__init__()
@@ -46,12 +47,11 @@ class IntegralTransform(nn.Module):
         # Takes relative position as input, outputs kernel weights
         self.layers = nn.ModuleList()
 
-        # Input dimension is 2 (for 2D relative position) or 3 (for 3D)
-        # We'll determine this dynamically in forward pass
-        self.input_dim = None
+        # Input dimension is 2 * pos_dim (concatenated source and target positions)
+        self.input_dim = 2 * pos_dim
 
-        # First layer (will be initialized properly in first forward pass)
-        self.first_layer = None
+        # First layer with known input dimension
+        self.first_layer = nn.Linear(self.input_dim, self.hidden_channels)
 
         # Hidden layers
         self.hidden_layers = nn.ModuleList()
@@ -94,15 +94,6 @@ class IntegralTransform(nn.Module):
             batch_size, n_points, pos_dim = pos.shape
         else:
             raise ValueError(f"Position tensor must be 2D or 3D, got {pos.dim()}D")
-
-        # Initialize kernel network layers if not done yet
-        if self.input_dim is None:
-            # Input to kernel is concatenated positions: [pos_i, pos_j]
-            self.input_dim = 2 * pos_dim
-            # Create first layer with correct dimensions
-            self.first_layer = nn.Linear(self.input_dim, self.hidden_channels)
-            # Move to same device as other parameters
-            self.first_layer.to(next(self.parameters()).device)
 
         # Flatten positions and input for batch processing
         # pos_flat: [batch * n_points, pos_dim]

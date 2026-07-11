@@ -34,6 +34,7 @@ class GNOBlock(nn.Module):
         activation: nn.Module = nn.GELU(),
         skip: str = "skip",
         eps: float = 1e-12,
+        pos_dim: int = 2,
     ):
         super().__init__()
 
@@ -48,6 +49,7 @@ class GNOBlock(nn.Module):
             out_channels=out_channels,
             hidden_channels=hidden_channels,
             n_layers=n_layers,
+            pos_dim=pos_dim,
             activation=activation,
         )
 
