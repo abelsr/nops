@@ -95,6 +95,33 @@ class SpectralConvolution(nn.Module):
         else:
             self.bias = None
 
+        # Cache for factorized weight reconstruction (avoids tensorly ops each forward)
+        self._cached_weights_real = None
+        self._cached_weights_imag = None
+
+    def _reconstruct_weights(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Reconstruct full weight tensor from factorized parameters, caching in eval mode."""
+        if not self.training and self._cached_weights_real is not None:
+            return self._cached_weights_real, self._cached_weights_imag
+
+        if self.factorization == 'tucker':
+            w_real = tl.tucker_to_tensor((self.core_real, [f for f in self.factors_real]))
+            w_imag = tl.tucker_to_tensor((self.core_imag, [f for f in self.factors_imag]))
+        elif self.factorization == 'cp':
+            w_real = tl.cp_to_tensor((self.weights_cp_real, [f for f in self.factors_cp_real]))
+            w_imag = tl.cp_to_tensor((self.weights_cp_imag, [f for f in self.factors_cp_imag]))
+        elif self.factorization == 'tt':
+            w_real = tl.tt_to_tensor(self.factors_tt_real)
+            w_imag = tl.tt_to_tensor(self.factors_tt_imag)
+        else:
+            raise ValueError(f"Unsupported factorization: {self.factorization}")
+
+        if not self.training:
+            self._cached_weights_real = w_real
+            self._cached_weights_imag = w_imag
+
+        return w_real, w_imag
+
     @staticmethod
     def complex_mult(input_real: torch.Tensor, input_imag: torch.Tensor, weights_real: torch.Tensor, weights_imag: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
@@ -229,27 +256,13 @@ class SpectralConvolution(nn.Module):
             out_ft_real, out_ft_imag = self.mix_weights(
                 out_ft_real, out_ft_imag, x_ft_real, x_ft_imag, self.weights_real, self.weights_imag
             )
-        elif self.factorization == 'tucker':
-            # Reconstruct weights from Tucker factorization and use them directly
+        elif self.factorization in ('tucker', 'cp', 'tt'):
+            w_real, w_imag = self._reconstruct_weights()
             out_ft_real, out_ft_imag = self.mix_weights(
-                out_ft_real, out_ft_imag, x_ft_real, x_ft_imag,
-                tl.tucker_to_tensor((self.core_real, [factor for factor in self.factors_real])),
-                tl.tucker_to_tensor((self.core_imag, [factor for factor in self.factors_imag]))
+                out_ft_real, out_ft_imag, x_ft_real, x_ft_imag, w_real, w_imag
             )
-        elif self.factorization == 'cp':
-            # Reconstruct weights from CP factorization and use them directly
-            out_ft_real, out_ft_imag = self.mix_weights(
-                out_ft_real, out_ft_imag, x_ft_real, x_ft_imag,
-                tl.cp_to_tensor((self.weights_cp_real, [factor for factor in self.factors_cp_real])), # type: ignore
-                tl.cp_to_tensor((self.weights_cp_imag, [factor for factor in self.factors_cp_imag]))  # type: ignore
-            )
-        elif self.factorization == 'tt':
-            # Reconstruct weights from TT factorization and use them directly
-            out_ft_real, out_ft_imag = self.mix_weights(
-                out_ft_real, out_ft_imag, x_ft_real, x_ft_imag,
-                tl.tt_to_tensor(self.factors_tt_real), # type: ignore
-                tl.tt_to_tensor(self.factors_tt_imag)  # type: ignore
-            )
+        else:
+            raise ValueError(f"Unsupported factorization: {self.factorization}")
 
         # Combine real and imaginary parts
         out_ft = torch.complex(out_ft_real, out_ft_imag)
