@@ -67,4 +67,12 @@ dev = [
     "numpy>=2.4.4",
     "pandas>=3.0.2",
     "pytest>=9.0.2",
+    "ruff>=0.9.0",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -2,6 +2,15 @@
 __pycache__/
 *.py[cod]
 *.so
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+
+# Cache dirs
+.ruff_cache/
+.pytest_cache/
 
 data
 
@@ -17,17 +26,25 @@ lightning_logs/
 128_modos/
 resultados_mayo/
 resutados_febrero/
+resultados_julio/
+notebooks/resultados_julio/
 
 *.npy
 *.pkl
 
 checkpoints/
+dist/
+build/
+coverage.xml
+.coverage
 
 .vscode/
 AGENT.md
+AGENTS.md
 
 # Experiment outputs
 experiments/vlasov-poisson/results/
 experiments/vlasov-poisson/simulations.zip
+experiments/vlasov-poisson/data/
 experiments/vlasov-poisson/notebooks/02_exploration_data.ipynb
 **/.ipynb_checkpoints/
