@@ -2,3 +2,34 @@
 __pycache__/
 *.py[cod]
 *.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+
+# Data & outputs
+data/
+output/
+outputs/
+experiments/
+checkpoints/
+
+# ML artifacts
+wandb/
+.hydra/
+.pt/
+.ckpt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
