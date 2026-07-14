@@ -1,0 +1,20 @@
+name: "fno"
+dimension: "2D"
+resolution: [64, 64]
+modes: [12, 12]
+num_fourier_layers: 4
+in_channels: 1
+out_channels: 1
+mid_channels: 64
+lifting_channels: null
+projection_channels: null
+activation: nn.GELU
+add_grid: false
+residual: false
+spectral_norm: false
+n_fno_blocks_per_layer: 1
+dropout: 0.0
+attn_gating: false
+attn_temperature: 1.0
+resolution_aware: false
+num_resolutions: 3

@@ -1,0 +1,44 @@
+scheduler: "cosine"
+lr: 0.001
+min_lr: 1.0e-06
+weight_decay: 0.01
+grad_clip: 1.0
+batch_size: 32
+val_batch_size: 100
+epochs: 200
+warmup_epochs: 10
+warmup_lr: 1.0e-06
+seed: 42
+resume: null
+
+# Loss weights
+loss_data: 1.0
+loss_pde_momentum: 0.0
+loss_pde_continuity: 0.0
+loss_energy: 0.0
+loss_enstrophy: 0.0
+loss_gradient: 0.0
+
+# Data
+nu: 0.001
+reynolds: 10000.0
+record_steps: 10
+train_samples: 4000
+val_samples: 500
+test_samples: 500
+train_resolution: 64
+val_resolution: 64
+test_resolution: 64
+data_dir: "./data"
+load_cached: true
+
+# Evaluation
+eval_only: false
+log_interval: 10
+val_interval: 1
+checkpoint_interval: 25
+early_stopping_patience: null
+
+# Exp naming
+exp_name: ""
+notes: ""

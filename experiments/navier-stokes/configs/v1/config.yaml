@@ -1,0 +1,8 @@
+defaults:
+  - model: fno
+  - training: standard
+  - _self_
+
+seed: 42
+device: "cuda"
+exp_name: ""
