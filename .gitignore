@@ -12,10 +12,11 @@ env/
 *.log
 
 # Data & outputs
-data/
+# data/
 output/
 outputs/
-experiments/
+!experiments/*
+!experiments/data/*
 checkpoints/
 
 # ML artifacts
