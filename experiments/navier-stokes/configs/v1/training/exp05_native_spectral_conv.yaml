@@ -1,0 +1,44 @@
+defaults:
+  - model: fno
+  - training: standard
+  - _self_
+
+# ── E05: AMP + NativeSpectralConv (Li et al. 2020) ──
+# Goal: close the 0.112 → 0.082 gap with clean complex64 weights,
+# no Tucker reconstruction overhead, AMP-safe.
+
+seed: 42
+device: "cuda"
+exp_name: "E05_native_spectral_conv"
+
+model:
+  modes: [16, 16]
+  mid_channels: 64
+  num_fourier_layers: 4
+  dimension: "2D"
+  activation: nn.GELU
+  add_grid: true
+  residual: true                    # ← enable residual for deeper training stability
+  spectral_norm: false
+  n_fno_blocks_per_layer: 1
+  dropout: 0.0
+  attn_gating: false
+  resolution_aware: true
+  native_spectral_conv: true        # ← E05: use complex64 direct spectral conv
+
+training:
+  epochs: 200
+  lr: 0.001
+  weight_decay: 0.01
+  warmup_epochs: 10
+  batch_size: 32
+  val_batch_size: 100
+  grad_clip: 1.0
+  scheduler: "cosine"
+  amp: true
+  early_stopping_patience: null
+  checkpoint_interval: 25
+  train_samples: 800
+  val_samples: 200
+  test_samples: 200
+  data_dir: "./data"

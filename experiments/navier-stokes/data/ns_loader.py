@@ -61,6 +61,153 @@ class L2NormPairDataset(Dataset):
         }
 
 
+class SpaceTimeDataset(Dataset):
+    """Space-time (FNO-3D) dataset: first ``n_in`` frames -> remaining frames.
+
+    Each sample is a *volume* ``[64, 64, n_in]`` mapped to ``[64, 64, T-n_in]``.
+    ``n_in`` defaults to ``T // 2`` (= 10 for T=20), so input and output
+    volumes have equal temporal extent — what a 3-D FNO requires.
+    """
+
+    def __init__(self, traj_indices: list[int], n_in: int = 10):
+        raw = _get_raw()                      # [N, 64, 64, T]
+        T = raw.shape[-1]
+        n_out = T - n_in
+        n = len(traj_indices)
+        self._ic = np.empty((n, 64, 64, n_in), dtype=np.float32)
+        self._tgt = np.empty((n, 64, 64, n_out), dtype=np.float32)
+        self._n_ic = np.empty(n, dtype=np.float32)
+        self._n_tgt = np.empty(n, dtype=np.float32)
+
+        eps = 1e-12
+        for k, ti in enumerate(traj_indices):
+            traj = raw[ti]                    # [64, 64, T]
+            inp = traj[:, :, :n_in]
+            tgt = traj[:, :, n_in:]
+            n_ic = float(np.sqrt(np.mean(inp ** 2)))
+            n_tgt = float(np.sqrt(np.mean(tgt ** 2)))
+            self._ic[k] = inp / (n_ic + eps)
+            self._tgt[k] = tgt / (n_tgt + eps)
+            self._n_ic[k] = n_ic
+            self._n_tgt[k] = n_tgt
+
+    def __len__(self) -> int:
+        return len(self._n_ic)
+
+    def __getitem__(self, idx: int) -> dict:
+        return {
+            "vorticity_ic": torch.from_numpy(self._ic[idx]),
+            "vorticity": torch.from_numpy(self._tgt[idx]),
+            "norm_ic": float(self._n_ic[idx]),
+            "norm_target": float(self._n_tgt[idx]),
+        }
+
+
+def make_dataloaders_3d(
+    n_train: int = 800,
+    n_val: int = 200,
+    n_test: int = 200,
+    n_in: int = 10,
+    batch_size: int = 8,
+    val_batch_size: int | None = None,
+    device: str = "cpu",
+) -> dict[str, DataLoader]:
+    """Space-time variant of :func:`make_dataloaders` (same trajectory split)."""
+    raw = _get_raw()
+    n_all = raw.shape[0]
+    rng = np.random.default_rng(seed=42)
+    perm = rng.permutation(n_all)
+
+    idx_tr = sorted(perm[:n_train].tolist())
+    idx_va = sorted(perm[n_train:n_train + n_val].tolist())
+    idx_te = sorted(perm[n_train + n_val:n_train + n_val + n_test].tolist())
+
+    if val_batch_size is None:
+        val_batch_size = len(idx_va)
+
+    return {
+        "train": DataLoader(SpaceTimeDataset(idx_tr, n_in), batch_size=batch_size, shuffle=True),
+        "val": DataLoader(SpaceTimeDataset(idx_va, n_in), batch_size=val_batch_size, shuffle=False),
+        "test": DataLoader(SpaceTimeDataset(idx_te, n_in), batch_size=val_batch_size, shuffle=False),
+    }
+
+
+class MultiFrameDataset(Dataset):
+    """``K`` past frames (as channels) -> next frame  — FNO-2D + RNN context.
+
+    This matches the setup of the FNO paper's ``FNO-2D`` benchmark on
+    Navier-Stokes, which maps the previous 10 time steps to the next one.
+    Each sample is ``[K, 64, 64]`` (input) -> ``[64, 64]`` (target).
+    """
+
+    def __init__(self, traj_indices: list[int], n_ctx: int = 10):
+        raw = _get_raw()                      # [N, 64, 64, T]
+        T = raw.shape[-1]
+        starts = list(range(n_ctx - 1, T - 1))    # start index of last input frame
+        n_pairs = len(starts)
+        n = len(traj_indices) * n_pairs
+
+        self._ic = np.empty((n, n_ctx, 64, 64), dtype=np.float32)
+        self._tgt = np.empty((n, 64, 64), dtype=np.float32)
+        self._n_ic = np.empty(n, dtype=np.float32)
+        self._n_tgt = np.empty(n, dtype=np.float32)
+
+        eps = 1e-12
+        k = 0
+        for ti in traj_indices:
+            traj = raw[ti]                    # [64, 64, T]
+            for t in starts:
+                win = traj[:, :, t - n_ctx + 1:t + 1]   # [64, 64, K]
+                tgt = traj[:, :, t + 1]                 # [64, 64]
+                n_ic = float(np.sqrt(np.mean(win ** 2)))
+                n_tgt = float(np.sqrt(np.mean(tgt ** 2)))
+                self._ic[k] = np.transpose(win, (2, 0, 1)) / (n_ic + eps)  # [K,64,64]
+                self._tgt[k] = tgt / (n_tgt + eps)
+                self._n_ic[k] = n_ic
+                self._n_tgt[k] = n_tgt
+                k += 1
+
+    def __len__(self) -> int:
+        return len(self._n_ic)
+
+    def __getitem__(self, idx: int) -> dict:
+        return {
+            "vorticity_ic": torch.from_numpy(self._ic[idx]),
+            "vorticity": torch.from_numpy(self._tgt[idx]),
+            "norm_ic": float(self._n_ic[idx]),
+            "norm_target": float(self._n_tgt[idx]),
+        }
+
+
+def make_dataloaders_ctx(
+    n_train: int = 800,
+    n_val: int = 200,
+    n_test: int = 200,
+    n_ctx: int = 10,
+    batch_size: int = 32,
+    val_batch_size: int | None = None,
+    device: str = "cpu",
+) -> dict[str, DataLoader]:
+    """Multi-frame-context variant of :func:`make_dataloaders` (same split)."""
+    raw = _get_raw()
+    n_all = raw.shape[0]
+    rng = np.random.default_rng(seed=42)
+    perm = rng.permutation(n_all)
+
+    idx_tr = sorted(perm[:n_train].tolist())
+    idx_va = sorted(perm[n_train:n_train + n_val].tolist())
+    idx_te = sorted(perm[n_train + n_val:n_train + n_val + n_test].tolist())
+
+    if val_batch_size is None:
+        val_batch_size = len(idx_va)
+
+    return {
+        "train": DataLoader(MultiFrameDataset(idx_tr, n_ctx), batch_size=batch_size, shuffle=True),
+        "val": DataLoader(MultiFrameDataset(idx_va, n_ctx), batch_size=val_batch_size, shuffle=False),
+        "test": DataLoader(MultiFrameDataset(idx_te, n_ctx), batch_size=val_batch_size, shuffle=False),
+    }
+
+
 def make_dataloaders(
     n_train: int = 800,
     n_val: int = 200,

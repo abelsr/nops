@@ -6,7 +6,7 @@ from torch.nn.utils import spectral_norm as _spectral_norm
 
 from .mlp import MLP
 from .ffn import FeedForwardNet
-from .spectral_convolution import SpectralConvolution
+from .spectral_convolution import SpectralConvolution, NativeSpectralConv
 
 
 class FourierBlock(nn.Module):
@@ -34,6 +34,7 @@ class FourierBlock(nn.Module):
         bias: bool = False,
         spectral_norm: bool = False,
         residual: bool = False,
+        native_spectral_conv: bool = False,
     ) -> None:
         """        
         Parameters:
@@ -54,6 +55,9 @@ class FourierBlock(nn.Module):
             Apply spectral normalization to SpectralConv weights. Default: False.
         residual: bool (Optional)
             Use identity skip connection when in_channels == out_channels. Default: False.
+        native_spectral_conv: bool (Optional)
+            Use NativeSpectralConv (complex64, Li et al. 2020) instead of the
+            legacy real/imag split implementation. Faster + AMP-safe. Default: False.
         """
         super().__init__()
         self.in_channels = in_channels
@@ -64,9 +68,12 @@ class FourierBlock(nn.Module):
         self.dim = len(self.modes)
         self.bias = bias
         self.residual = residual and (in_channels == out_channels)
-        
-        # Fourier layer (SpectralConvolution)
-        self.fourier = SpectralConvolution(in_channels, out_channels, modes, factorization='dense')
+
+        # Fourier layer — native (E05) or legacy
+        if native_spectral_conv:
+            self.fourier = NativeSpectralConv(in_channels, out_channels, modes)
+        else:
+            self.fourier = SpectralConvolution(in_channels, out_channels, modes, factorization='dense')
         # Spectral norm not yet supported for SpectralConv (no 'weight' param)
         
         # MLP layer

@@ -11,6 +11,9 @@ warmup_lr: 1.0e-06
 seed: 42
 resume: null
 
+# Mixed-precision (AMP) — ON by default on CUDA, zero cost on CPU
+amp: true
+
 # Loss weights
 loss_data: 1.0
 loss_pde_momentum: 0.0

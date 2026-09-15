@@ -15,12 +15,12 @@ from __future__ import annotations
 import gc
 import json
 import time
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import hydra
 import torch
+import torch.amp as amp
 import torch.nn as nn
 import torch.optim as optim
 from omegaconf import DictConfig, OmegaConf
@@ -51,6 +51,48 @@ def mean_energy_error(true: torch.Tensor, pred: torch.Tensor) -> float:
     e_true = 0.5 * true.float().pow(2).mean(dim=(1, 2))
     e_pred = 0.5 * pred.float().pow(2).mean(dim=(1, 2))
     return (e_pred - e_true).abs().mean().item() / (e_true.mean().abs() + 1e-10)
+
+
+def spectral_gradient_penalty(pred: torch.Tensor, true: torch.Tensor) -> torch.Tensor:
+    """MSE between the spectral gradients of prediction and target.
+
+    Penalises mismatch in the *derivative* fields, which up-weights the
+    small-scale structure that plain MSE under-weights.  Gradients are
+    computed spectrally on the last two (spatial) axes, so this also works
+    for space-time volumes ``[B, H, W, T]``.
+    """
+    def _grads(x: torch.Tensor):
+        x = x.float()
+        h, w = x.shape[-2], x.shape[-1]
+        x_ft = torch.fft.rfft2(x, norm="ortho")
+        vx = [1] * x.dim(); vx[-2] = h
+        vy = [1] * x.dim(); vy[-1] = w // 2 + 1     # rfftfreq length
+        kx = torch.fft.fftfreq(h, device=x.device).view(vx)
+        ky = torch.fft.rfftfreq(w, device=x.device).view(vy)
+        dx = torch.fft.irfft2(1j * 2 * torch.pi * kx * x_ft, s=(h, w), norm="ortho")
+        dy = torch.fft.irfft2(1j * 2 * torch.pi * ky * x_ft, s=(h, w), norm="ortho")
+        return dx, dy
+
+    pdx, pdy = _grads(pred)
+    tdx, tdy = _grads(true)
+    return (pdx - tdx).pow(2).mean() + (pdy - tdy).pow(2).mean()
+
+
+def forward_pred(model: nn.Module, ic: torch.Tensor) -> torch.Tensor:
+    """Run the model on a loader batch.
+
+    Handles both conventions:
+      * single-frame input  ``[B, H, W]``          -> ``[B, 1, H, W]``
+      * multi-frame input   ``[B, C, H, W]``        -> used directly
+      * space-time volume   ``[B, H, W, T]``        -> ``[B, 1, H, W, T]``
+    A singleton output channel is squeezed so the result matches the
+    ``[B, *spatial]`` target convention used by the metrics.
+    """
+    x = ic.unsqueeze(1) if ic.dim() == 3 else ic
+    pred = model(x)
+    if pred.shape[1] == 1:
+        pred = pred.squeeze(1)
+    return pred
 
 
 # ---------------------------------------------------------------------------
@@ -200,10 +242,11 @@ def build_model(cfg: DictConfig) -> nn.Module:
         add_grid=add_grid,
         spectral_norm=cfg.model.get("spectral_norm", False),
         residual=cfg.model.get("residual", False),
-        resolution_aware=cfg.model.get("resolution_aware", False),
+        resolution_aware=cfg.model.get("resolution_aware", True),
         dropout=cfg.model.get("dropout", 0.0),
         attn_gating=cfg.model.get("attn_gating", False),
         n_fno_blocks_per_layer=cfg.model.get("n_fno_blocks_per_layer", 1),
+        native_spectral_conv=cfg.model.get("native_spectral_conv", False),
     )
 
 
@@ -239,7 +282,7 @@ def evaluate(model: nn.Module, loader, device, max_samples: int | None = None) -
     for batch in loader:
         ic = batch["vorticity_ic"].to(device)
         tgt = batch["vorticity"].to(device)
-        pred = model(ic.unsqueeze(1)).squeeze(1)
+        pred = forward_pred(model, ic)
         if pred.shape != tgt.shape:
             pred = nn.functional.interpolate(pred.unsqueeze(1), size=tgt.shape[1:],
                                               mode="bilinear", align_corners=False).squeeze(1)
@@ -259,11 +302,6 @@ def evaluate(model: nn.Module, loader, device, max_samples: int | None = None) -
     return {
         "l2": float(l2_s / (n + 1e-10)), "l1": float(l1_s / (n + 1e-10)),
         "energy_err": float(e_s / (n + 1e-10)), "time": time.time() - t0,
-        "n": n,
-    }
-    return {
-        "l2": l2_s / (n + 1e-10), "l1": l1_s / (n + 1e-10),
-        "energy_err": e_s / (n + 1e-10), "time": time.time() - t0,
         "n": n,
     }
 
@@ -292,16 +330,37 @@ def main(cfg: DictConfig) -> None:
     _dd = Path(__file__).resolve().parent / "data"
     if str(_dd) not in sys.path:
         sys.path.insert(0, str(_dd))
-    from ns_loader import make_dataloaders
+    from ns_loader import make_dataloaders, make_dataloaders_3d, make_dataloaders_ctx
 
-    loaders = make_dataloaders(
-        n_train=cfg.training.train_samples,
-        n_val=cfg.training.val_samples,
-        n_test=cfg.training.test_samples,
-        batch_size=cfg.training.batch_size,
-        val_batch_size=cfg.training.val_batch_size,
-        device=device,
-    )
+    if cfg.model.get("dimension", "2D") == "3D":
+        loaders = make_dataloaders_3d(
+            n_train=cfg.training.train_samples,
+            n_val=cfg.training.val_samples,
+            n_test=cfg.training.test_samples,
+            n_in=cfg.training.get("n_in", 10),
+            batch_size=cfg.training.batch_size,
+            val_batch_size=cfg.training.val_batch_size,
+            device=device,
+        )
+    elif cfg.model.get("in_channels", 1) > 1:
+        loaders = make_dataloaders_ctx(
+            n_train=cfg.training.train_samples,
+            n_val=cfg.training.val_samples,
+            n_test=cfg.training.test_samples,
+            n_ctx=cfg.model.in_channels,
+            batch_size=cfg.training.batch_size,
+            val_batch_size=cfg.training.val_batch_size,
+            device=device,
+        )
+    else:
+        loaders = make_dataloaders(
+            n_train=cfg.training.train_samples,
+            n_val=cfg.training.val_samples,
+            n_test=cfg.training.test_samples,
+            batch_size=cfg.training.batch_size,
+            val_batch_size=cfg.training.val_batch_size,
+            device=device,
+        )
     print(f"[INIT] train={len(loaders['train'].dataset)}  val={len(loaders['val'].dataset)}  test={len(loaders['test'].dataset)}", flush=True)
 
     # --- Optimiser / Scheduler ---
@@ -313,6 +372,11 @@ def main(cfg: DictConfig) -> None:
                            cfg.training.lr,
                            cfg.training.get("warmup_lr", 1e-6),
                            cfg.training.epochs)
+
+    # --- AMP scaler (enabled only on CUDA) ---
+    use_amp = device.type == "cuda" and cfg.training.get("amp", True)
+    scaler = amp.GradScaler("cuda", enabled=use_amp)
+    print(f"[INIT] AMP={'ON' if use_amp else 'OFF'}", flush=True)
 
     # --- Resume ---
     start_ep = 0
@@ -348,19 +412,24 @@ def main(cfg: DictConfig) -> None:
             ic = batch["vorticity_ic"].to(device)
             tgt = batch["vorticity"].to(device)
 
-            pred = model(ic.unsqueeze(1)).squeeze(1)
-            loss = (pred.float() - tgt.float()).pow(2).mean()
+            with amp.autocast("cuda", enabled=use_amp):
+                pred = forward_pred(model, ic)
+                loss = (pred.float() - tgt.float()).pow(2).mean()
 
-            if cfg.training.get("loss_enstrophy", 0) > 0:
-                loss += cfg.training.loss_enstrophy * (pred.float().pow(2).mean())
-            if cfg.training.get("loss_energy", 0) > 0:
-                loss += cfg.training.loss_energy * (pred.float().pow(2).std() - tgt.float().pow(2).std()).pow(2)
+                if cfg.training.get("loss_enstrophy", 0) > 0:
+                    loss += cfg.training.loss_enstrophy * (pred.float().pow(2).mean())
+                if cfg.training.get("loss_energy", 0) > 0:
+                    loss += cfg.training.loss_energy * (pred.float().pow(2).std() - tgt.float().pow(2).std()).pow(2)
+                if cfg.training.get("loss_gradient", 0) > 0:
+                    loss = loss + cfg.training.loss_gradient * spectral_gradient_penalty(pred, tgt)
 
             optim_.zero_grad()
-            loss.backward()
+            scaler.scale(loss).backward()
             if grad_clip := cfg.training.get("grad_clip", 0):
+                scaler.unscale_(optim_)
                 nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-            optim_.step()
+            scaler.step(optim_)
+            scaler.update()
 
             ep_loss += loss.item() * ic.size(0)
             ep_n += ic.size(0)

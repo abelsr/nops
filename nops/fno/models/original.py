@@ -50,6 +50,7 @@ class FNO(nn.Module):
         self.spectral_norm = kwargs.get("spectral_norm", False)
         self.residual = kwargs.get("residual", False)
         self.resolution_aware = kwargs.get("resolution_aware", True)
+        self.native_spectral_conv = kwargs.get("native_spectral_conv", False)
         self.sizes = [0] * self.dim
 
         # --- Padding ---
@@ -104,6 +105,7 @@ class FNO(nn.Module):
                     activation=activation,
                     spectral_norm=self.spectral_norm,
                     residual=self.residual,
+                    native_spectral_conv=self.native_spectral_conv,
                 )
                 for _ in range(self.n_fno_blocks_per_layer)
             ])

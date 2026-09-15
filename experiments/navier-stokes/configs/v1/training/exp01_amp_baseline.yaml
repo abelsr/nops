@@ -1,0 +1,43 @@
+defaults:
+  - model: fno
+  - training: standard
+  - _self_
+
+# ── E01: AMP-only baseline (m16 c64 L4) ──
+# Reproduces the 0.112 baseline with mixed-precision for speedup.
+
+seed: 42
+device: "cuda"
+exp_name: "E01_amp_baseline"
+
+model:
+  modes: [16, 16]
+  mid_channels: 64
+  num_fourier_layers: 4
+  dimension: "2D"
+  activation: nn.GELU
+  add_grid: true
+  residual: false
+  spectral_norm: false
+  n_fno_blocks_per_layer: 1
+  dropout: 0.0
+  attn_gating: false
+  resolution_aware: true
+  native_spectral_conv: false   # baseline uses legacy SpectralConvolution
+
+training:
+  epochs: 200
+  lr: 0.001
+  weight_decay: 0.01
+  warmup_epochs: 10
+  batch_size: 32
+  val_batch_size: 100
+  grad_clip: 1.0
+  scheduler: "cosine"
+  amp: true                        # ← E01: enable mixed-precision
+  early_stopping_patience: null
+  checkpoint_interval: 25
+  train_samples: 800
+  val_samples: 200
+  test_samples: 200
+  data_dir: "./data"

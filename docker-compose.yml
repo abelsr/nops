@@ -1,0 +1,35 @@
+services:
+  nops:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nops:dev
+    container_name: nops-dev
+    # ── GPU passthrough ──────────────────────────────────────────────────
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # ── Mount source for live editing (overrides COPY in image) ──────────
+    volumes:
+      - .:/workspace
+      # Reuse the host dataset cache (~/.cache/nops) inside the container
+      - ${HOME}/.cache/nops:/root/.cache/nops
+      # Persist other caches (HF, etc.) across rebuilds
+      - nops-cache:/root/.cache
+    # ── Shared memory for DataLoader workers ─────────────────────────────
+    shm_size: "2g"
+    environment:
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - NVIDIA_VISIBLE_DEVICES=all
+    working_dir: /workspace
+    # Keep container alive for exec / attach
+    stdin_open: true
+    tty: true
+    command: ["python", "-m", "pytest", "-q", "tests/"]
+
+volumes:
+  nops-cache:
