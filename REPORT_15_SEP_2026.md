@@ -164,7 +164,53 @@ evaluation protocol**, not architecture.
 
 ---
 
-## 5. Artifacts & Reproduction
+## 4.1 Evaluation-protocol check (measured, 15 Sep follow-up)
+
+The same predictions from `data/ctx_long/checkpoints/ep250.pth` were scored
+under several metric conventions (`experiments/navier-stokes/eval_protocol.py`):
+
+| Metric variant | Value |
+|----------------|-------|
+| 1. per-sample mean (true per-sample relL2) | **0.0470** |
+| 2. per-batch ratio (FNO repo style) | 0.0616 |
+| 3. global ratio (whole test set) | 0.0627 |
+| 4. global ratio, physical domain | 0.0690 |
+| 5. physical ratio with a *predicted* scale | **0.2930** |
+
+### Findings
+
+1. **Metric convention explains ~1.5× of the gap, not all of it.**
+   Moving from per-sample averaging to a physical-domain global ratio moves
+   the number `0.047 → 0.069` (×1.47). Against the paper's 0.0128 the gap
+   therefore narrows from ~4.5× to ~3.7×, but does **not** close. Roughly
+   3× remains a genuine model/regime difference.
+
+2. **The model is scale-free — the metric so far has used an oracle.**
+   Because every target is normalised by *its own* L2 norm, the model never
+   learns absolute amplitude. Our per-sample metric cancels that norm, which
+   is why it looks good. Replacing the oracle target norm with a scale
+   predicted from the input window's RMS inflates the physical-domain error
+   to **0.293** (variant 5). The mean amplitude ratio `n_tgt / n_win = 1.434`,
+   i.e. the flow amplitude grows ~43% across a 10-frame window.
+
+3. **A true autoregressive rollout is not currently possible.**
+   With the predicted scale, the rollout degrades immediately (step 1 =
+   0.394) and saturates to ≈0.99 by step 10 — the prediction becomes
+   decorrelated from the truth. This is dominated by cumulative scale drift,
+   not by a dynamics failure.
+
+### Implication
+
+The paper's **trajectory-level** metric cannot be reproduced with the current
+training scheme, because the model does not predict absolute amplitude. A
+faithful trajectory-level comparison requires **retraining so the model
+outputs a physically scaled field** — either by training on raw fields (as
+the original FNO does) or by normalising the target by the *input window*
+scale rather than by its own norm. That retrain is now the highest-value
+next step, and it should be evaluated with the `eval_protocol.py` harness
+before any further architecture work.
+
+---
 
 ### Files added / changed
 
@@ -220,16 +266,18 @@ each other.
 
 ## 6. Next Steps (priority order)
 
-1. **Evaluation-protocol check** — score the current model with a
-   *trajectory-level* relative L2 (as the paper does) to quantify how much
-   of the 4.5× gap is metric definition rather than model quality. This is
-   the cheapest decisive test and needs no training.
-2. **Longer schedule** — the model was still improving at epoch 250
+1. **Retrain with a physically scaled output** — the protocol check above
+   shows the current model is scale-free and therefore cannot be rolled out
+   or compared on a trajectory metric. Train either on raw fields (as the
+   original FNO does) or normalising the target by the *input window* scale
+   instead of by its own norm. Evaluate with
+   `experiments/navier-stokes/eval_protocol.py`.
+2. **Re-score after that retrain** — the protocol harness makes the
+   comparison against Table 1 of Li et al. (2020) meaningful for the first
+   time. Expect the per-sample metric to look *worse* (no oracle norm) but
+   the number to be honest and comparable.
+3. **Longer schedule** — the model was still improving at epoch 250
    (0.0584@150 → 0.0580@250). The paper trains 500 epochs.
-3. **Revisit input normalisation** — we normalise each input field by its
-   *own* L2 norm, discarding absolute amplitude, which is informative about
-   position along the trajectory. The original FNO trains on raw fields;
-   worth an ablation.
 4. **Super-resolution** — FNO's headline property. The `resolution_aware`
    (MFI) path exists but is currently disabled; a cross-resolution test
    would be a stronger demonstration than further absolute-error tuning.
