@@ -14,6 +14,13 @@ resume: null
 # Mixed-precision (AMP) — ON by default on CUDA, zero cost on CPU
 amp: true
 
+# Target normalisation for multi-frame context loaders:
+#   "own"    — target divided by its own L2 norm (legacy; needs an oracle
+#              target norm at inference, model is scale-free)
+#   "window" — target divided by the INPUT window RMS (no oracle; model
+#              predicts physically-scaled output and can be rolled out)
+target_scale: "own"
+
 # Loss weights
 loss_data: 1.0
 loss_pde_momentum: 0.0

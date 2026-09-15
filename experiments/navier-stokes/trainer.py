@@ -330,7 +330,8 @@ def main(cfg: DictConfig) -> None:
     _dd = Path(__file__).resolve().parent / "data"
     if str(_dd) not in sys.path:
         sys.path.insert(0, str(_dd))
-    from ns_loader import make_dataloaders, make_dataloaders_3d, make_dataloaders_ctx
+    from ns_loader import (make_dataloaders, make_dataloaders_3d,
+                           make_dataloaders_ctx, make_dataloaders_scaled)
 
     if cfg.model.get("dimension", "2D") == "3D":
         loaders = make_dataloaders_3d(
@@ -343,7 +344,9 @@ def main(cfg: DictConfig) -> None:
             device=device,
         )
     elif cfg.model.get("in_channels", 1) > 1:
-        loaders = make_dataloaders_ctx(
+        _scaled = cfg.training.get("target_scale", "own") == "window"
+        _fn = make_dataloaders_scaled if _scaled else make_dataloaders_ctx
+        loaders = _fn(
             n_train=cfg.training.train_samples,
             n_val=cfg.training.val_samples,
             n_test=cfg.training.test_samples,

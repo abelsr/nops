@@ -179,6 +179,87 @@ class MultiFrameDataset(Dataset):
         }
 
 
+class MultiFrameScaledDataset(Dataset):
+    """``K`` past frames -> next frame, target in the SAME units as the input.
+
+    Unlike :class:`MultiFrameDataset`, the target is **not** normalised by its
+    own L2 norm — both the input window and the target are divided by the
+    *window's* RMS.  This makes the model predict physically-scaled output:
+
+    * no oracle leak — de-normalisation needs only the input window, which is
+      available at inference time;
+    * the (deterministic) amplitude growth the flow exhibits is something the
+      model must actually learn, rather than being cancelled by the metric;
+    * true autoregressive rollouts become possible.
+
+    Sample: ``[K, 64, 64]`` -> ``[64, 64]`` (both in window-RMS units).
+    """
+
+    def __init__(self, traj_indices: list[int], n_ctx: int = 10):
+        raw = _get_raw()                      # [N, 64, 64, T]
+        T = raw.shape[-1]
+        starts = list(range(n_ctx - 1, T - 1))
+        n_pairs = len(starts)
+        n = len(traj_indices) * n_pairs
+
+        self._ic = np.empty((n, n_ctx, 64, 64), dtype=np.float32)
+        self._tgt = np.empty((n, 64, 64), dtype=np.float32)
+        self._n_win = np.empty(n, dtype=np.float32)
+
+        eps = 1e-12
+        k = 0
+        for ti in traj_indices:
+            traj = raw[ti]
+            for t in starts:
+                win = traj[:, :, t - n_ctx + 1:t + 1]     # [64, 64, K]
+                tgt = traj[:, :, t + 1]                   # [64, 64]
+                n_win = float(np.sqrt(np.mean(win ** 2)))
+                self._ic[k] = np.transpose(win, (2, 0, 1)) / (n_win + eps)
+                self._tgt[k] = tgt / (n_win + eps)        # SAME scale as input
+                self._n_win[k] = n_win
+                k += 1
+
+    def __len__(self) -> int:
+        return len(self._n_win)
+
+    def __getitem__(self, idx: int) -> dict:
+        return {
+            "vorticity_ic": torch.from_numpy(self._ic[idx]),
+            "vorticity": torch.from_numpy(self._tgt[idx]),
+            "norm_ic": float(self._n_win[idx]),
+            "norm_target": float(self._n_win[idx]),   # same scale by design
+        }
+
+
+def make_dataloaders_scaled(
+    n_train: int = 1000,
+    n_val: int = 100,
+    n_test: int = 100,
+    n_ctx: int = 10,
+    batch_size: int = 16,
+    val_batch_size: int | None = None,
+    device: str = "cpu",
+) -> dict[str, DataLoader]:
+    """Window-scaled multi-frame variant (no oracle target norm)."""
+    raw = _get_raw()
+    n_all = raw.shape[0]
+    rng = np.random.default_rng(seed=42)
+    perm = rng.permutation(n_all)
+
+    idx_tr = sorted(perm[:n_train].tolist())
+    idx_va = sorted(perm[n_train:n_train + n_val].tolist())
+    idx_te = sorted(perm[n_train + n_val:n_train + n_val + n_test].tolist())
+
+    if val_batch_size is None:
+        val_batch_size = len(idx_va)
+
+    return {
+        "train": DataLoader(MultiFrameScaledDataset(idx_tr, n_ctx), batch_size=batch_size, shuffle=True),
+        "val": DataLoader(MultiFrameScaledDataset(idx_va, n_ctx), batch_size=val_batch_size, shuffle=False),
+        "test": DataLoader(MultiFrameScaledDataset(idx_te, n_ctx), batch_size=val_batch_size, shuffle=False),
+    }
+
+
 def make_dataloaders_ctx(
     n_train: int = 800,
     n_val: int = 200,
