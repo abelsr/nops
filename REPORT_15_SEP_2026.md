@@ -1,0 +1,237 @@
+# Report — Navier-Stokes FNO Experiments
+## Session: 15 September 2026
+
+> Supersedes the results in [`REPORT_14_JUL_2026.md`](REPORT_14_JUL_2026.md).
+> Commits: `a0f47d6` (this session).
+
+---
+
+## Executive Summary
+
+This session improved the 2D forced Navier-Stokes (ν=1e-3) FNO from the
+previously reported best of **val_rell2 ≈ 0.112** to:
+
+| Metric | Before (14 Jul) | **After (15 Sep)** | Change |
+|--------|-----------------|--------------------|--------|
+| **val_l2** (best) | 0.112 | **0.0580** | **−48%** |
+| **test_l2** | 0.1121 | **0.0604** | **−46%** |
+| test_l1 | — | 0.0382 | — |
+| test_energy_err | — | 0.0032 | — |
+| **Parameters** | 8,574,337 | **2,759,377** | **−68%** |
+| Epochs | 50–150 | 250 | — |
+
+**A 3× smaller model, 48% more accurate.** It also **beats the earlier
+"SpectraNet target" of 0.0822 by 29%** (that target now looks like a
+mismatched reference — it matches FNO-3D's ν=1e-4/N=10000 figure of 0.0820).
+
+---
+
+## 1. What Changed
+
+### 1.1 Temporal context (the dominant lever)
+
+The previous setup predicted the next frame from a **single** frame. The
+original FNO paper's `FNO-2D` Navier-Stokes benchmark instead maps the
+**previous 10 time steps → next step**. Adding that context was the single
+biggest win.
+
+- New `MultiFrameDataset` in `experiments/navier-stokes/data/ns_loader.py`
+- Each sample: `[10, 64, 64]` (K frames as channels) → `[64, 64]`
+
+### 1.2 Native spectral convolution (`NativeSpectralConv`)
+
+Replaces the previous real/imag split with **per-forward Tucker
+reconstruction** — flagged as the bottleneck in the 14 Jul report.
+
+The new layer is a faithful re-implementation of Li et al. (2020):
+
+- Single `torch.cfloat` weight block per sign-quadrant (`2^(N-1)` blocks:
+  1 for 1-D, 2 for 2-D, 4 for 3-D)
+- `rfftn` / `irfftn` with the last axis kept at non-negative frequencies
+- FFT forced to `float32` → AMP-safe
+- Wired through `FourierBlock` → `FNO` via the `native_spectral_conv` flag
+
+### 1.3 Mixed precision (AMP)
+
+Added `torch.autocast` + `GradScaler` behind `training.amp` (default on for
+CUDA). Roughly 1.5–2× epoch throughput, which is what made longer runs
+tractable on the 4 GB RTX 3050.
+
+### 1.4 Full data + longer schedule
+
+- Training trajectories: 800 → **1000** (10,000 context samples)
+- Epochs: 150 → **250**
+
+This is what turned the *test* score around: val improved only 0.0584 → 0.0580,
+but **test improved 0.0658 → 0.0604**, i.e. the extra data bought
+generalisation rather than memorisation.
+
+### 1.5 Bug fixes
+
+| File | Fix |
+|------|-----|
+| `trainer.py` | removed unreachable duplicate `return` in `evaluate()` |
+| `trainer.py` | `build_model` now forwards `native_spectral_conv` |
+| `trainer.py` | `resolution_aware` default now matches the model |
+| `trainer.py` | `spectral_gradient_penalty` view shape (`rfftfreq` length is `w//2+1`) |
+
+---
+
+## 2. Experiment Results
+
+All runs: trajectory split (seed 42), per-field L2 normalisation, AdamW,
+cosine schedule, AMP on, RTX 3050 Laptop (4 GB).
+
+| # | Experiment | Params | val_l2 | test_l2 | Verdict |
+|---|------------|--------|--------|---------|---------|
+| 0 | Previous best (single frame, legacy conv) | 8.57M | 0.1120 | 0.1121 | baseline |
+| 1 | **`fno_ctx`** — 10-frame context + native conv, 150 ep | **2.76M** | **0.0584** | 0.0658 | 🏆 breakthrough |
+| 2 | `fno_ctx16` — modes 16×16, wider, 150 ep | 8.57M | 0.0591 | 0.0671 | ❌ worse |
+| 3 | `fno_ctx` + gradient loss (λ=0.1), 150 ep | 2.76M | 0.0585 | 0.0660 | ❌ neutral |
+| 4 | **`fno_ctx` + 1000 traj + 250 ep** | **2.76M** | **0.0580** | **0.0604** | 🏆 **best** |
+| — | `fno3d` — space-time (FNO-3D style), 35 ep (stopped) | 16.2M | 0.2334 | — | ❌ plateaued |
+
+### 2.1 Per-frame error (best model, test trajectory 1000)
+
+| Target t | 14 Jul model | ctx (ep150) | **final (ep250)** |
+|----------|--------------|-------------|-------------------|
+| t=10 | 0.233 | 0.024 | **0.021** |
+| t=13 | 0.042 | 0.027 | **0.024** |
+| t=15 | 0.042 | 0.028 | **0.026** |
+| t=17 | 0.068 | 0.037 | **0.033** |
+| **t=19** | **0.203** | 0.053 | **0.043** |
+| max err @ t=19 | 2.071 | 0.622 | **0.571** |
+
+Figures: `outputs/predictions_ep50.png` (old),
+`outputs/predictions_ctx_ep150.png`,
+`outputs/predictions_final_ep250.png` (best).
+
+---
+
+## 3. Negative Results (load-bearing)
+
+Two hypotheses were **falsified** — these narrow down where the remaining
+gap actually lives.
+
+### 3.1 Capacity is not the limiter
+
+`modes=[16,16]`, `mid_channels=64` (8.57M params) scored **worse** than
+`modes=[12,12]`, `mid_channels=48` (2.76M): 0.0591/0.0671 vs 0.0584/0.0658.
+Tripling the parameters bought nothing. Widening the model further is
+wasted compute.
+
+### 3.2 The objective is not the limiter
+
+A spectral gradient penalty
+`L = MSE(pred, true) + λ·MSE(∇pred, ∇true)`, λ=0.1, was **neutral**:
+0.0585 vs 0.0584. Plain MSE on the normalised field already fits the
+derivative structure, consistent with `v_E ≈ 0.003` (energy already matched).
+
+### 3.3 Space-time (FNO-3D) did not help
+
+A 3-D space-time model (predict frames 10–19 from 0–9 as an `[H,W,T]`
+volume) plateaued at **0.2334** by epoch 35. Note this is **not directly
+comparable** to the 1-step numbers — it predicts all 10 future frames at
+once, so error compounds over the whole horizon.
+
+---
+
+## 4. Comparison with the Original FNO Paper
+
+Li et al. (2020), Table 1 — Navier-Stokes, 64×64:
+
+| Model | Params | ν=1e-3 |
+|-------|--------|--------|
+| FNO-3D | 6,558,537 | 0.0086 |
+| FNO-2D | 414,517 | 0.0128 |
+| U-Net | 24,950,491 | 0.0245 |
+| TF-Net | 7,451,724 | 0.0225 |
+| **Ours (this session)** | **2,759,377** | **0.0580** |
+
+We are **~4.5× above FNO-2D**. The comparison is **not clean**, for reasons
+that are now well understood:
+
+1. **Horizon / regime** — the paper's ν=1e-3 run uses T=50, N=1000; our file
+   is `N1200_T20`.
+2. **Metric definition** — the paper reports a trajectory-level relative
+   error; we report per-sample single-step relative L2.
+3. **Context** — the paper's FNO-2D baseline is a 2D+RNN model; we now match
+   its 10-frame context, which is what closed most of our gap.
+
+Because the two remaining falsified hypotheses (capacity, objective) point
+away from model design, the residual gap is most plausibly **data / regime /
+evaluation protocol**, not architecture.
+
+---
+
+## 5. Artifacts & Reproduction
+
+### Files added / changed
+
+| File | Change |
+|------|--------|
+| `nops/fno/layers/spectral_convolution.py` | `NativeSpectralConv` (new); legacy `SpectralConvolution` kept |
+| `nops/fno/layers/fno_block.py` | `native_spectral_conv` flag |
+| `nops/fno/models/original.py` | passes flag to blocks |
+| `experiments/navier-stokes/data/ns_loader.py` | `MultiFrameDataset`, `SpaceTimeDataset`, `make_dataloaders_ctx`, `make_dataloaders_3d` |
+| `experiments/navier-stokes/trainer.py` | AMP, gradient loss, generalised forward, fixes |
+| `experiments/navier-stokes/plot_predictions.py` | prediction-vs-truth figures |
+| `Dockerfile`, `docker-compose.yml`, `.dockerignore` | containerised workflow |
+| `configs/v1/model/{fno_ctx,fno_ctx16,fno3d}.yaml` | model configs |
+
+### Checkpoints
+
+- **Best**: `data/ctx_long/checkpoints/ep250.pth` (val_l2 = 0.0580)
+- `data/ctx_grad/checkpoints/ep150.pth` (gradient-loss run)
+- ⚠️ The single-frame-era `data/checkpoints/ep50.pth` (0.1127) was
+  **overwritten** by a later run before per-experiment checkpoint dirs were
+  introduced. Metrics and plots survive; weights do not.
+
+### Reproduce the best result
+
+```bash
+docker compose run --rm nops uv run python \
+  experiments/navier-stokes/trainer.py \
+  model=fno_ctx \
+  training.epochs=250 \
+  training.train_samples=1000 training.val_samples=100 training.test_samples=100 \
+  training.batch_size=16 training.val_batch_size=50 \
+  training.weight_decay=0.001 training.checkpoint_interval=50 \
+  training.data_dir=./data/ctx_long \
+  exp_name=FNO2D_ctx_full_long
+```
+
+Plot the result:
+
+```bash
+docker compose run --rm nops uv run python \
+  experiments/navier-stokes/plot_predictions.py \
+  --ckpt data/ctx_long/checkpoints/ep250.pth \
+  --out outputs/predictions_final_ep250.png
+```
+
+### Note on checkpoints
+
+Use a per-experiment `training.data_dir` (e.g. `./data/ctx_long`) to keep
+checkpoints isolated — otherwise runs at the same epoch count overwrite
+each other.
+
+---
+
+## 6. Next Steps (priority order)
+
+1. **Evaluation-protocol check** — score the current model with a
+   *trajectory-level* relative L2 (as the paper does) to quantify how much
+   of the 4.5× gap is metric definition rather than model quality. This is
+   the cheapest decisive test and needs no training.
+2. **Longer schedule** — the model was still improving at epoch 250
+   (0.0584@150 → 0.0580@250). The paper trains 500 epochs.
+3. **Revisit input normalisation** — we normalise each input field by its
+   *own* L2 norm, discarding absolute amplitude, which is informative about
+   position along the trajectory. The original FNO trains on raw fields;
+   worth an ablation.
+4. **Super-resolution** — FNO's headline property. The `resolution_aware`
+   (MFI) path exists but is currently disabled; a cross-resolution test
+   would be a stronger demonstration than further absolute-error tuning.
+
+*Report generated: 15 September 2026*

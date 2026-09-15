@@ -1,6 +1,16 @@
 # Report — Navier-Stokes FNO Experiments
 ## Session: 14 July 2026
 
+> ⚠️ **SUPERSEDED — 15 September 2026.**
+> The results below (best `val_rell2 ≈ 0.112`) have been superseded.
+> The current best is **`val_l2 = 0.0580`, `test_l2 = 0.0604`** with a 3×
+> smaller model (2.76M params) — see
+> [`REPORT_15_SEP_2026.md`](REPORT_15_SEP_2026.md).
+> The "SpectraNet target 0.0822" referenced below is now believed to be a
+> mismatched benchmark (it matches FNO-3D's ν=1e-4/N=10000 figure of 0.0820).
+> Kept for history: the diagnosis in §4.2 (spectral conv bottleneck) is
+> confirmed, but §4.1's claims about what SpectraNet does were speculative.
+
 ---
 
 ## Executive Summary
