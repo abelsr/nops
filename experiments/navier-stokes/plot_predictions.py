@@ -69,6 +69,7 @@ def main() -> None:
     traj = raw[args.traj]                # [64, 64, 20]
     n_steps = traj.shape[-1] - 1         # 19 transitions (t -> t+1)
     n_ctx = int(ckpt["cfg"]["model"].get("in_channels", 1))
+    ts_mode = str(ckpt["cfg"].get("training", {}).get("target_scale", "own"))
 
     # sample evenly spaced transitions (need n_ctx frames of history)
     ts = np.linspace(max(1, n_ctx), n_steps, args.n).astype(int)   # target t+1
@@ -97,8 +98,10 @@ def main() -> None:
         n_tgt = float(np.sqrt(np.mean(tgt ** 2)))
         pred_n = model(x).squeeze().float().cpu().numpy()
 
-        # denormalize: model predicts the *normalized* next field
-        pred = pred_n * n_tgt
+        # denormalize: under target_scale="window" the output is in window-RMS
+        # units; under "own" it must be scaled by the target's own norm
+        scale = n_ic if ts_mode == "window" else n_tgt
+        pred = pred_n * scale
         rel_l2 = np.linalg.norm(tgt - pred) / (np.linalg.norm(tgt) + 1e-10)
 
         vmin, vmax = tgt.min(), tgt.max()

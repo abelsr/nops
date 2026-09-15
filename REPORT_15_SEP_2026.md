@@ -11,18 +11,27 @@
 This session improved the 2D forced Navier-Stokes (ν=1e-3) FNO from the
 previously reported best of **val_rell2 ≈ 0.112** to:
 
-| Metric | Before (14 Jul) | **After (15 Sep)** | Change |
+| Metric | Before (14 Jul) | **Final (15 Sep)** | Change |
 |--------|-----------------|--------------------|--------|
-| **val_l2** (best) | 0.112 | **0.0580** | **−48%** |
-| **test_l2** | 0.1121 | **0.0604** | **−46%** |
-| test_l1 | — | 0.0382 | — |
+| **val_l2** (best) | 0.112 | **0.0509** | **−55%** |
+| **test_l2** | 0.1121 | **0.0528** | **−53%** |
+| test_l1 | — | 0.0350 | — |
 | test_energy_err | — | 0.0032 | — |
 | **Parameters** | 8,574,337 | **2,759,377** | **−68%** |
 | Epochs | 50–150 | 250 | — |
+| **Oracle target norm?** | n/a | **no** | — |
 
-**A 3× smaller model, 48% more accurate.** It also **beats the earlier
-"SpectraNet target" of 0.0822 by 29%** (that target now looks like a
-mismatched reference — it matches FNO-3D's ν=1e-4/N=10000 figure of 0.0820).
+**A 3× smaller model, 55% more accurate — and the final number is
+oracle-free.** It also **beats the earlier "SpectraNet target" of 0.0822 by
+38%** (that target now looks like a mismatched reference — it matches
+FNO-3D's ν=1e-4/N=10000 figure of 0.0820).
+
+> **Read this before quoting 0.0509.** An earlier result in this session
+> (0.0580) was measured with the *true target L2 norm* supplied externally —
+> the model was scale-free, so the metric silently used an oracle. The final
+> model (`target_scale=window`) predicts physically-scaled output and needs
+> no oracle, so **0.0509 is the honest, comparable number** — and it is
+> better than the oracle-assisted 0.0580.
 
 ---
 
@@ -88,7 +97,8 @@ cosine schedule, AMP on, RTX 3050 Laptop (4 GB).
 | 1 | **`fno_ctx`** — 10-frame context + native conv, 150 ep | **2.76M** | **0.0584** | 0.0658 | 🏆 breakthrough |
 | 2 | `fno_ctx16` — modes 16×16, wider, 150 ep | 8.57M | 0.0591 | 0.0671 | ❌ worse |
 | 3 | `fno_ctx` + gradient loss (λ=0.1), 150 ep | 2.76M | 0.0585 | 0.0660 | ❌ neutral |
-| 4 | **`fno_ctx` + 1000 traj + 250 ep** | **2.76M** | **0.0580** | **0.0604** | 🏆 **best** |
+| 4 | `fno_ctx` + 1000 traj + 250 ep | 2.76M | 0.0580 | 0.0604 | ✅ (oracle-assisted) |
+| 5 | **`fno_ctx` + `target_scale=window`, 250 ep** | **2.76M** | **0.0509** | **0.0528** | 🏆 **best, oracle-free** |
 | — | `fno3d` — space-time (FNO-3D style), 35 ep (stopped) | 16.2M | 0.2334 | — | ❌ plateaued |
 
 ### 2.1 Per-frame error (best model, test trajectory 1000)
@@ -212,6 +222,84 @@ before any further architecture work.
 
 ---
 
+## 4.2 Fixing the oracle: `target_scale=window` retrain
+
+### The fix
+
+Both the input window **and** the target are divided by the *window's* RMS
+(instead of normalising the target by its own norm). The model therefore
+outputs a physically-scaled field, and de-normalisation needs only the input
+window — information genuinely available at inference time.
+
+Selected via `training.target_scale=window` (default `"own"` keeps the legacy
+behaviour). Implemented as `MultiFrameScaledDataset` +
+`make_dataloaders_scaled`.
+
+### Result — `FNO2D_scaled_250ep`
+
+| Metric | Value |
+|--------|-------|
+| best val_l2 | **0.0509** (ep243) |
+| test_l2 | **0.0528** |
+| test_l1 | 0.0350 |
+| test_energy_err | 0.0032 |
+| params | 2,759,377 |
+| epochs | 250 |
+
+The scaled model **beats the oracle-assisted model on every metric variant**
+and is measured honestly:
+
+| Metric variant | `own` (oracle) | **`window` (oracle-free)** |
+|----------------|----------------|-----------------------------|
+| per-sample mean | 0.0470 | **0.0453** |
+| per-batch ratio (FNO repo) | 0.0616 | **0.0537** |
+| global ratio | 0.0627 | **0.0544** |
+| global ratio, physical | 0.0690 | **0.0670** |
+| scale ablation | 0.2930 (guessed scale) | n/a — model predicts scale |
+
+### Autoregressive rollout (the real payoff)
+
+`target_scale=own` could not be rolled out at all (error saturated at ≈0.99
+by step 10 — prediction decorrelated from truth). The scaled model rolls out
+cleanly:
+
+| Step (t) | 1 (11) | 2 (12) | 5 (15) | 8 (18) | 10 (20) |
+|----------|--------|--------|--------|--------|---------|
+| `own` (guessed scale) | 0.394 | 0.459 | 0.652 | 0.898 | **0.993** ❌ |
+| **`window` (oracle-free)** | **0.0235** | **0.0305** | **0.0547** | **0.1126** | **0.1814** ✅ |
+
+Mean over rollout steps: **0.0782**. Error grows gracefully (×7.7 over 10
+steps) instead of diverging — which is what a usable operator should do.
+
+### Per-frame error (scaled model, test trajectory 1000)
+
+| Target t | 14 Jul model | oracle `own` (ep250) | **scaled (ep250)** |
+|----------|--------------|----------------------|--------------------|
+| t=10 | 0.233 | 0.021 | **0.020** |
+| t=13 | 0.042 | 0.024 | **0.022** |
+| t=15 | 0.042 | 0.026 | **0.024** |
+| t=17 | 0.068 | 0.033 | **0.033** |
+| t=19 | 0.203 | 0.043 | 0.047 |
+| **max err @ t=19** | 2.071 | 0.571 | **0.455** |
+
+Figure: `outputs/predictions_scaled_ep250.png`.
+
+### Interpretation
+
+The window-scaled scheme wins for two reasons:
+
+1. The loss is on physically-scaled targets, so high-amplitude (late, hard)
+   frames receive proportionally more gradient weight instead of every frame
+   being forced to unit RMS.
+2. The absolute amplitude in the input window is no longer discarded — it
+   carries information about where in the trajectory the flow is.
+
+Both mattered, and neither was visible under the oracle metric.
+
+---
+
+## 5. Artifacts & Reproduction
+
 ### Files added / changed
 
 | File | Change |
@@ -219,15 +307,18 @@ before any further architecture work.
 | `nops/fno/layers/spectral_convolution.py` | `NativeSpectralConv` (new); legacy `SpectralConvolution` kept |
 | `nops/fno/layers/fno_block.py` | `native_spectral_conv` flag |
 | `nops/fno/models/original.py` | passes flag to blocks |
-| `experiments/navier-stokes/data/ns_loader.py` | `MultiFrameDataset`, `SpaceTimeDataset`, `make_dataloaders_ctx`, `make_dataloaders_3d` |
-| `experiments/navier-stokes/trainer.py` | AMP, gradient loss, generalised forward, fixes |
+| `experiments/navier-stokes/data/ns_loader.py` | `MultiFrameDataset`, `MultiFrameScaledDataset`, `SpaceTimeDataset`, `make_dataloaders_{ctx,scaled,3d}` |
+| `experiments/navier-stokes/trainer.py` | AMP, gradient loss, generalised forward, `target_scale`, fixes |
 | `experiments/navier-stokes/plot_predictions.py` | prediction-vs-truth figures |
+| `experiments/navier-stokes/eval_protocol.py` | metric-definition + rollout harness |
 | `Dockerfile`, `docker-compose.yml`, `.dockerignore` | containerised workflow |
 | `configs/v1/model/{fno_ctx,fno_ctx16,fno3d}.yaml` | model configs |
 
 ### Checkpoints
 
-- **Best**: `data/ctx_long/checkpoints/ep250.pth` (val_l2 = 0.0580)
+- **Best (use this)**: `data/ctx_scaled/checkpoints/ep250.pth`
+  — val_l2 = **0.0509**, test_l2 = **0.0528**, `target_scale=window`, oracle-free
+- `data/ctx_long/checkpoints/ep250.pth` — val_l2 = 0.0580 (oracle-assisted)
 - `data/ctx_grad/checkpoints/ep150.pth` (gradient-loss run)
 - ⚠️ The single-frame-era `data/checkpoints/ep50.pth` (0.1127) was
   **overwritten** by a later run before per-experiment checkpoint dirs were
@@ -239,12 +330,13 @@ before any further architecture work.
 docker compose run --rm nops uv run python \
   experiments/navier-stokes/trainer.py \
   model=fno_ctx \
+  training.target_scale=window \
   training.epochs=250 \
   training.train_samples=1000 training.val_samples=100 training.test_samples=100 \
   training.batch_size=16 training.val_batch_size=50 \
   training.weight_decay=0.001 training.checkpoint_interval=50 \
-  training.data_dir=./data/ctx_long \
-  exp_name=FNO2D_ctx_full_long
+  training.data_dir=./data/ctx_scaled \
+  exp_name=FNO2D_scaled_250ep
 ```
 
 Plot the result:
@@ -252,8 +344,16 @@ Plot the result:
 ```bash
 docker compose run --rm nops uv run python \
   experiments/navier-stokes/plot_predictions.py \
-  --ckpt data/ctx_long/checkpoints/ep250.pth \
-  --out outputs/predictions_final_ep250.png
+  --ckpt data/ctx_scaled/checkpoints/ep250.pth \
+  --out outputs/predictions_scaled_ep250.png
+```
+
+Score it (metric variants + oracle-free rollout):
+
+```bash
+docker compose run --rm nops uv run python \
+  experiments/navier-stokes/eval_protocol.py \
+  --ckpt data/ctx_scaled/checkpoints/ep250.pth
 ```
 
 ### Note on checkpoints
@@ -266,20 +366,18 @@ each other.
 
 ## 6. Next Steps (priority order)
 
-1. **Retrain with a physically scaled output** — the protocol check above
-   shows the current model is scale-free and therefore cannot be rolled out
-   or compared on a trajectory metric. Train either on raw fields (as the
-   original FNO does) or normalising the target by the *input window* scale
-   instead of by its own norm. Evaluate with
-   `experiments/navier-stokes/eval_protocol.py`.
-2. **Re-score after that retrain** — the protocol harness makes the
-   comparison against Table 1 of Li et al. (2020) meaningful for the first
-   time. Expect the per-sample metric to look *worse* (no oracle norm) but
-   the number to be honest and comparable.
-3. **Longer schedule** — the model was still improving at epoch 250
-   (0.0584@150 → 0.0580@250). The paper trains 500 epochs.
-4. **Super-resolution** — FNO's headline property. The `resolution_aware`
+1. **Longer schedule** — the scaled model was still improving at epoch 250.
+   The paper trains 500 epochs; a 500-epoch scaled run is the cheapest
+   remaining gain.
+2. **Old evaluation-protocol caveats are now resolved** — the model is
+   oracle-free and rollable, so future results are directly comparable.
+   Quote the **rollout mean (0.0782)** alongside the single-step number when
+   comparing to the paper's trajectory-level figures.
+3. **Super-resolution** — FNO's headline property. The `resolution_aware`
    (MFI) path exists but is currently disabled; a cross-resolution test
    would be a stronger demonstration than further absolute-error tuning.
+4. **Ablate against raw fields** — `target_scale=window` beat `own`; it is
+   worth testing plain raw-field training (what the original FNO does) on
+   the same harness to see whether the residual normalisation helps or hurts.
 
 *Report generated: 15 September 2026*

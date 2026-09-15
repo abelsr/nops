@@ -79,10 +79,12 @@ def main() -> None:
     model.eval()
 
     n_ctx = int(ckpt["cfg"]["model"].get("in_channels", 1))
+    ts_mode = str(ckpt["cfg"].get("training", {}).get("target_scale", "own"))
     raw = _get_raw()                      # [1200, 64, 64, 20]
     T = raw.shape[-1]
     idx_te = test_indices()
-    print(f"[INFO] {args.ckpt} | n_ctx={n_ctx} | test traj={len(idx_te)} | device={device}")
+    print(f"[INFO] {args.ckpt} | n_ctx={n_ctx} | target_scale={ts_mode} | "
+          f"test traj={len(idx_te)} | device={device}")
 
     # ------------------------------------------------------------------
     # Build the single-step test set: window -> next frame (normalized)
@@ -96,8 +98,13 @@ def main() -> None:
             n_ic = float(np.sqrt(np.mean(win ** 2)))
             n_tg = float(np.sqrt(np.mean(nxt ** 2)))
             windows.append(np.transpose(win, (2, 0, 1)) / (n_ic + EPS))   # [K,64,64]
-            targets.append(nxt / (n_tg + EPS))
-            scales.append(n_tg)
+            if ts_mode == "window":
+                # target in the SAME units as the input window (no oracle)
+                targets.append(nxt / (n_ic + EPS))
+                scales.append(n_ic)
+            else:
+                targets.append(nxt / (n_tg + EPS))
+                scales.append(n_tg)
 
     W = torch.from_numpy(np.stack(windows)).float()    # [N,K,64,64]
     Y = torch.from_numpy(np.stack(targets)).float()    # [N,64,64]
@@ -143,9 +150,10 @@ def main() -> None:
     m_global_phys = ((Pp - Yp).norm() / (Yp.norm() + EPS)).item()
 
     # ------------------------------------------------------------------
-    # 5. scale-ablation: replace the true target norm n_tgt with a
-    #    *predicted* scale (the input window's RMS).  Isolates the
-    #    amplitude-prediction problem from genuine dynamics error.
+    # 5. scale-ablation (ONLY meaningful for target_scale="own")
+    #    Replaces the true target norm n_tgt with a scale predicted from the
+    #    input window.  Under target_scale="window" the model already
+    #    predicts the scale, so this variant is not applicable.
     # ------------------------------------------------------------------
     n_win = []
     for ti in idx_te:
@@ -154,9 +162,12 @@ def main() -> None:
             win = traj[:, :, t - n_ctx + 1:t + 1]
             n_win.append(float(np.sqrt(np.mean(win ** 2))))
     n_win_t = torch.tensor(n_win).float()
-    P_est = P * n_win_t[:, None, None]
-    m_scale_err = ((P_est - Yp).norm() / (Yp.norm() + EPS)).item()
-    scale_ratio = (S / n_win_t).mean().item()
+    if ts_mode == "window":
+        m_scale_err, scale_ratio = None, (S / n_win_t).mean().item()
+    else:
+        P_est = P * n_win_t[:, None, None]
+        m_scale_err = ((P_est - Yp).norm() / (Yp.norm() + EPS)).item()
+        scale_ratio = (S / n_win_t).mean().item()
 
     # ------------------------------------------------------------------
     # 5. autoregressive 10-step rollout in normalized space
@@ -195,10 +206,18 @@ def main() -> None:
     print(f"  2. per-batch ratio   (FNO repo)  : {m_perbatch:.4f}")
     print(f"  3. global ratio      (whole set) : {m_global:.4f}")
     print(f"  4. global ratio, physical domain : {m_global_phys:.4f}")
-    print(f"  5. physical ratio w/ PREDICTED   : {m_scale_err:.4f}   "
-          f"(scale from window RMS; mean n_tgt/n_win = {scale_ratio:.3f})")
+    if m_scale_err is None:
+        print(f"  5. scale ablation                : n/a "
+              f"(model predicts scale; mean n_tgt/n_win = {scale_ratio:.3f})")
+    else:
+        print(f"  5. physical ratio w/ PREDICTED   : {m_scale_err:.4f}   "
+              f"(scale from window RMS; mean n_tgt/n_win = {scale_ratio:.3f})")
     print("-" * 68)
-    print("  Autoregressive rollout (normalized space, mean over traj):")
+    if ts_mode == "window":
+        print("  Autoregressive rollout (oracle-free, physical units):")
+    else:
+        print("  Autoregressive rollout (INVALID for target_scale='own' — the")
+        print("  model is scale-free, so amplitude must be guessed):")
     for s in range(steps):
         print(f"    step {s + 1:2d} (t={n_ctx + s + 1:2d}) : {step_err[s]:.4f}")
     print(f"    mean over rollout steps          : {step_err.mean():.4f}")
